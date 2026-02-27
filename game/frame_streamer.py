@@ -1,23 +1,18 @@
 """
-Frame Streamer — Captures Pygame screen frames and sends them to the bridge server.
+Frame Streamer v2 — Persistent WebSocket binary streaming.
 
-Usage in autonomous_game.py:
-    from frame_streamer import FrameStreamer
-    self.frame_streamer = FrameStreamer(game_id="game-001")
-    # In the draw loop:
-    self.frame_streamer.submit(self.game.screen)
-    # On quit:
-    self.frame_streamer.close()
+Instead of HTTP POST per frame, this opens a single WebSocket to the bridge
+and pumps raw binary JPEG frames at up to 25 FPS.
+
+No base64, no HTTP overhead — the bridge receives bytes and immediately
+forwards them to all browser /ws/video/{game_id} subscribers.
 """
 
-import base64
 import io
 import os
 import queue
 import threading
 import time
-import urllib.request
-import urllib.error
 from typing import Optional
 
 import pygame
@@ -29,103 +24,144 @@ except ImportError:
     PIL_AVAILABLE = False
 
 BRIDGE_URL = os.environ.get("BRIDGE_URL", "http://localhost:8000")
+WS_BASE    = BRIDGE_URL.replace("http://", "ws://").replace("https://", "wss://")
 
-# Target output resolution for the stream (width, height)
-STREAM_WIDTH  = 854
-STREAM_HEIGHT = 480
-JPEG_QUALITY  = 60   # Lower = smaller payload, more compression artefacts
-TARGET_FPS    = 10   # Frames per second to stream (game runs at 60 fps)
+# Stream settings
+STREAM_WIDTH  = 800
+STREAM_HEIGHT = 450
+JPEG_QUALITY  = 72          # Good balance: quality vs. bandwidth
+TARGET_FPS    = 25          # Frames per second (game runs at 60 fps)
+FRAME_INTERVAL = 1.0 / TARGET_FPS
 
 
 class FrameStreamer:
     """
-    Background thread that converts pygame Surface → JPEG → base64
-    and POSTs to the bridge server.
-
-    Non-blocking: the game loop calls submit() which only queues; never waits.
+    Background thread that captures pygame Surface frames and streams
+    them over a persistent WebSocket to the bridge as raw binary JPEGs.
     """
 
     def __init__(self, game_id: str = "game-001"):
         self.game_id = game_id
-        self._q: queue.Queue = queue.Queue(maxsize=3)  # drop old frames if slow
+        self._q: queue.Queue = queue.Queue(maxsize=4)  # Drop stale frames if slow
         self._stopped = False
+        self._last_capture = 0.0
         self._worker = threading.Thread(target=self._run, daemon=True, name="FrameStreamer")
         self._worker.start()
-        self._frame_interval = 1.0 / TARGET_FPS
-        self._last_submit = 0.0
 
     def submit(self, surface: pygame.Surface):
-        """Call from the game loop every frame. Rate-limited internally."""
+        """Call from the game draw loop each frame. Rate-limited to TARGET_FPS."""
         now = time.monotonic()
-        if now - self._last_submit < self._frame_interval:
-            return  # Skip — not time for a new frame yet
-        self._last_submit = now
+        if now - self._last_capture < FRAME_INTERVAL:
+            return
+        self._last_capture = now
 
-        # Copy surface pixels to bytes (must happen on main thread while surface is valid)
         try:
-            raw = self._surface_to_bytes(surface)
+            jpeg = self._to_jpeg(surface)
         except Exception:
             return
 
-        # Put in queue (non-blocking: drop if queue full)
         try:
-            self._q.put_nowait(raw)
+            self._q.put_nowait(jpeg)
         except queue.Full:
-            pass
+            # Drop oldest, enqueue newest
+            try:
+                self._q.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self._q.put_nowait(jpeg)
+            except queue.Full:
+                pass
 
     def close(self):
         self._stopped = True
         try:
-            self._q.put_nowait(None)
+            self._q.put_nowait(None)  # Sentinel to unblock worker
         except queue.Full:
             pass
-        self._worker.join(timeout=2)
+        self._worker.join(timeout=3)
 
     # ------------------------------------------------------------------
-    # Internal
+    # Frame capture (on game/main thread)
     # ------------------------------------------------------------------
 
-    def _surface_to_bytes(self, surface: pygame.Surface) -> bytes:
-        """Convert pygame surface → JPEG bytes."""
-        # Scale down to stream resolution
+    def _to_jpeg(self, surface: pygame.Surface) -> bytes:
         if surface.get_width() != STREAM_WIDTH or surface.get_height() != STREAM_HEIGHT:
-            scaled = pygame.transform.scale(surface, (STREAM_WIDTH, STREAM_HEIGHT))
+            scaled = pygame.transform.smoothscale(surface, (STREAM_WIDTH, STREAM_HEIGHT))
         else:
             scaled = surface
 
-        # Convert via PIL
         if PIL_AVAILABLE:
-            raw_str = pygame.image.tobytes(scaled, "RGB")
-            img = Image.frombytes("RGB", (STREAM_WIDTH, STREAM_HEIGHT), raw_str)
+            raw = pygame.image.tobytes(scaled, "RGB")
+            img = Image.frombytes("RGB", (STREAM_WIDTH, STREAM_HEIGHT), raw)
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=JPEG_QUALITY, optimize=False)
             return buf.getvalue()
         else:
-            # Fallback: PNG via pygame (larger but no PIL dependency)
             buf = io.BytesIO()
             pygame.image.save(scaled, buf, ".png")
             return buf.getvalue()
 
-    def _run(self):
-        while True:
-            raw = self._q.get()
-            if raw is None or self._stopped:
-                break
-            self._post_frame(raw)
-            self._q.task_done()
+    # ------------------------------------------------------------------
+    # Background sender thread
+    # ------------------------------------------------------------------
 
-    def _post_frame(self, jpeg_bytes: bytes):
-        b64 = base64.b64encode(jpeg_bytes).decode("ascii")
-        payload = f'{{"type":"FRAME","game_id":"{self.game_id}","data":"{b64}"}}'.encode()
-        url = f"{BRIDGE_URL}/game/ingest/{self.game_id}"
-        req = urllib.request.Request(
-            url,
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=1):
+    def _run(self):
+        """Keep a persistent WebSocket to the bridge and pump frames."""
+        while not self._stopped:
+            try:
+                self._stream_loop()
+            except Exception:
                 pass
-        except Exception:
-            pass  # Bridge offline or slow — drop frame silently
+            if not self._stopped:
+                time.sleep(1)  # Wait before reconnecting
+
+    def _stream_loop(self):
+        uri = f"{WS_BASE}/ws/stream/{self.game_id}"
+
+        try:
+            from websockets.sync.client import connect as ws_connect
+        except ImportError:
+            # Fallback: HTTP POST (slow, but works)
+            self._run_http_fallback()
+            return
+
+        with ws_connect(uri, max_size=8 * 1024 * 1024, open_timeout=5) as ws:
+            print(f"[FrameStreamer] Connected → {uri}")
+            while not self._stopped:
+                try:
+                    frame = self._q.get(timeout=1.0)
+                except queue.Empty:
+                    continue
+                if frame is None:
+                    break
+                try:
+                    ws.send(frame)  # Raw binary JPEG
+                except Exception:
+                    raise  # Reconnect outer loop
+                self._q.task_done()
+
+    def _run_http_fallback(self):
+        """HTTP POST fallback when websockets.sync not available."""
+        import urllib.request
+        import base64
+        import json as _json
+
+        while not self._stopped:
+            try:
+                frame = self._q.get(timeout=1.0)
+            except queue.Empty:
+                continue
+            if frame is None:
+                break
+            b64 = base64.b64encode(frame).decode("ascii")
+            payload = _json.dumps({"type": "FRAME", "game_id": self.game_id, "data": b64}).encode()
+            url = f"{BRIDGE_URL}/game/ingest/{self.game_id}"
+            req = urllib.request.Request(url, data=payload,
+                                          headers={"Content-Type": "application/json"}, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=1):
+                    pass
+            except Exception:
+                pass
+            self._q.task_done()

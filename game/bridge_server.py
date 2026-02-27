@@ -244,6 +244,52 @@ async def ws_legacy(websocket: WebSocket):
 
 
 # ---------------------------------------------------------------------------
+# WebSocket — Game engine pushes binary video frames here
+# ---------------------------------------------------------------------------
+
+# game_id → Set[WebSocket] — browser video subscribers
+video_subscribers: Dict[str, Set[WebSocket]] = defaultdict(set)
+
+
+@app.websocket("/ws/stream/{game_id}")
+async def ws_stream_ingest(websocket: WebSocket, game_id: str):
+    """
+    The game engine connects here and pushes raw binary JPEG frames.
+    Bridge immediately fans them out to all /ws/video/{game_id} subscribers.
+    """
+    await websocket.accept()
+    print(f"[STREAM] Game engine connected for {game_id}")
+    try:
+        while True:
+            frame_bytes = await websocket.receive_bytes()
+            dead: Set[WebSocket] = set()
+            for ws in list(video_subscribers.get(game_id, set())):
+                try:
+                    await ws.send_bytes(frame_bytes)
+                except Exception:
+                    dead.add(ws)
+            video_subscribers[game_id] -= dead
+    except WebSocketDisconnect:
+        print(f"[STREAM] Game engine disconnected for {game_id}")
+
+
+@app.websocket("/ws/video/{game_id}")
+async def ws_video_subscribe(websocket: WebSocket, game_id: str):
+    """Browser connects here to receive raw binary JPEG video frames."""
+    await websocket.accept()
+    video_subscribers[game_id].add(websocket)
+    print(f"[VIDEO] Browser subscribed to {game_id} ({len(video_subscribers[game_id])} total)")
+    try:
+        while True:
+            # Just keep alive — frames are pushed to us, we don't receive from browser
+            await asyncio.sleep(30)
+            await websocket.send_text('{"type":"PING"}')
+    except WebSocketDisconnect:
+        video_subscribers[game_id].discard(websocket)
+        print(f"[VIDEO] Browser unsubscribed from {game_id}")
+
+
+# ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
 

@@ -58,9 +58,8 @@ function GameCard({ game }: { game: GameListing }) {
   return (
     <Link
       href={`/game/${game.id}`}
-      className={`group relative flex flex-col rounded-xl border bg-card overflow-hidden transition-all hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 ${
-        isActive ? "border-primary/20" : "border-border"
-      }`}
+      className={`group relative flex flex-col rounded-xl border bg-card overflow-hidden transition-all hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 ${isActive ? "border-primary/20" : "border-border"
+        }`}
     >
       {/* Thumbnail area */}
       <div className="relative aspect-video bg-secondary/50 overflow-hidden">
@@ -141,13 +140,12 @@ function GameCard({ game }: { game: GameListing }) {
         {game.hypeScore > 0 && (
           <div className="absolute bottom-0 left-0 right-0 h-1">
             <div
-              className={`h-full transition-all ${
-                game.hypeScore > 70
-                  ? "bg-destructive"
-                  : game.hypeScore > 40
+              className={`h-full transition-all ${game.hypeScore > 70
+                ? "bg-destructive"
+                : game.hypeScore > 40
                   ? "bg-accent"
                   : "bg-muted-foreground"
-              }`}
+                }`}
               style={{ width: `${Math.min(game.hypeScore, 100)}%` }}
             />
           </div>
@@ -173,9 +171,8 @@ function GameCard({ game }: { game: GameListing }) {
           </span>
           {game.priceChange !== 0 && (
             <span
-              className={`flex items-center gap-0.5 font-mono text-[11px] font-bold tabular-nums ${
-                game.priceChange > 0 ? "text-success" : "text-danger"
-              }`}
+              className={`flex items-center gap-0.5 font-mono text-[11px] font-bold tabular-nums ${game.priceChange > 0 ? "text-success" : "text-danger"
+                }`}
             >
               {game.priceChange > 0 ? (
                 <TrendingUp className="size-3" />
@@ -197,9 +194,8 @@ function GameCard({ game }: { game: GameListing }) {
           {game.hypeScore > 0 && (
             <span className="flex items-center gap-1 text-[11px] font-mono">
               <Flame
-                className={`size-3 ${
-                  game.hypeScore > 70 ? "text-destructive" : "text-accent"
-                }`}
+                className={`size-3 ${game.hypeScore > 70 ? "text-destructive" : "text-accent"
+                  }`}
               />
               {game.hypeScore}
             </span>
@@ -358,11 +354,37 @@ function FeaturedGame({ game }: { game: GameListing }) {
   )
 }
 
+const BRIDGE_URL = process.env.NEXT_PUBLIC_BRIDGE_URL ?? "http://localhost:8000"
+
 export function GamesLobby() {
   const [filter, setFilter] = useState<FilterTab>("all")
   const [games, setGames] = useState(MOCK_GAMES)
+  const [bridgeOnline, setBridgeOnline] = useState(false)
 
-  // Simulate live viewer/price fluctuations
+  // Poll bridge server for live games every 5s
+  useEffect(() => {
+    async function fetchBridgeGames() {
+      try {
+        const res = await fetch(`${BRIDGE_URL}/games`, { signal: AbortSignal.timeout(2000) })
+        if (!res.ok) throw new Error()
+        const bridgeGames: GameListing[] = await res.json()
+        setBridgeOnline(true)
+        // Prepend real bridge games, keep mock ones that aren't duplicated
+        setGames((prev) => {
+          const bridgeIds = new Set(bridgeGames.map((g) => g.id))
+          const mocks = prev.filter((g) => !bridgeIds.has(g.id))
+          return [...bridgeGames, ...mocks]
+        })
+      } catch {
+        setBridgeOnline(false)
+      }
+    }
+    fetchBridgeGames()
+    const interval = setInterval(fetchBridgeGames, 5000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Simulate live viewer/price fluctuations for mock games
   const tick = useCallback(() => {
     setGames((prev) =>
       prev.map((g) => {
@@ -389,10 +411,10 @@ export function GamesLobby() {
     filter === "all"
       ? games
       : games.filter((g) =>
-          filter === "live"
-            ? g.status === "live" || g.status === "starting"
-            : g.status === filter
-        )
+        filter === "live"
+          ? g.status === "live" || g.status === "starting"
+          : g.status === filter
+      )
 
   const featured = games.find((g) => g.status === "live" && g.hypeScore >= 70)
   const rest = filtered.filter((g) => g.id !== featured?.id)
@@ -402,6 +424,7 @@ export function GamesLobby() {
     upcoming: games.filter((g) => g.status === "upcoming").length,
     ended: games.filter((g) => g.status === "ended").length,
   }
+
 
   return (
     <div className="flex flex-col h-screen bg-background">
@@ -424,9 +447,9 @@ export function GamesLobby() {
             {counts.live} live game{counts.live !== 1 ? "s" : ""}
           </span>
           <div className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-success animate-pulse" />
+            <span className={`size-2 rounded-full animate-pulse ${bridgeOnline ? "bg-success" : "bg-warning"}`} />
             <span className="font-mono text-[10px] text-muted-foreground uppercase">
-              Network Online
+              {bridgeOnline ? "Bridge Online" : "Bridge Offline"}
             </span>
           </div>
         </div>
@@ -438,11 +461,10 @@ export function GamesLobby() {
           <button
             key={tab}
             onClick={() => setFilter(tab)}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-mono text-xs transition-colors ${
-              filter === tab
-                ? "bg-primary/10 text-primary border border-primary/30"
-                : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-            }`}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-mono text-xs transition-colors ${filter === tab
+              ? "bg-primary/10 text-primary border border-primary/30"
+              : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+              }`}
           >
             {tab === "live" && <Radio className="size-3" />}
             {tab === "upcoming" && <Clock className="size-3" />}

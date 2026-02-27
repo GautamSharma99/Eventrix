@@ -14,12 +14,15 @@ import { Play, RotateCcw, BarChart3, Coins, ArrowLeft } from "lucide-react"
 import { MOCK_GAMES } from "@/lib/games-data"
 import Link from "next/link"
 
+const BRIDGE_URL = process.env.NEXT_PUBLIC_BRIDGE_URL ?? "http://localhost:8000"
+
 interface SpectatorAppProps {
   gameId?: string
 }
 
 export function SpectatorApp({ gameId }: SpectatorAppProps) {
-  useWebSocket()
+  // Connect to per-game WS channel when gameId is known
+  useWebSocket(gameId)
 
   const { phase } = useGameStore()
   const { start, stop } = useDemoSimulation()
@@ -66,11 +69,19 @@ export function SpectatorApp({ gameId }: SpectatorAppProps) {
             size="sm"
             variant="outline"
             className="font-mono text-[10px] h-6 border-primary/30 text-primary hover:bg-primary/10"
-            onClick={start}
+            onClick={async () => {
+              // Try real bridge first; fall back to local demo simulation
+              try {
+                const res = await fetch(`${BRIDGE_URL}/game/start`, { method: "POST" })
+                if (!res.ok) throw new Error()
+              } catch {
+                start()
+              }
+            }}
             disabled={phase === "running" || phase === "meeting"}
           >
             <Play className="size-3 mr-1" />
-            {phase === "ended" ? "Replay" : "Run Demo"}
+            {phase === "ended" ? "Replay" : "Start Game"}
           </Button>
           {(phase === "running" || phase === "meeting") && (
             <Button
@@ -90,7 +101,7 @@ export function SpectatorApp({ gameId }: SpectatorAppProps) {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Stream area -- takes ~55% */}
         <div className="flex-[55] min-h-0 border-b border-border">
-          <StreamPlayer />
+          <StreamPlayer gameId={gameId} />
         </div>
 
         {/* Bottom tabs -- takes ~45% */}
