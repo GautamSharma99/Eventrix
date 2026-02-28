@@ -92,6 +92,7 @@ export interface PredictionMarket {
   predictions: Record<string, MarketPrediction>
   lockedAt?: number
   resolvedAt?: number
+  onChainMarketId?: number
 }
 
 export type PredictionChoice = "YES" | "NO"

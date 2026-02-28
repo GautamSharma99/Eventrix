@@ -1,21 +1,26 @@
-import { Gamepad2, BarChart3, Link2 } from "lucide-react";
+import { Gamepad2, Bot, Radio, Link2 } from "lucide-react";
 import { motion } from "framer-motion";
 
 const steps = [
   {
     icon: Gamepad2,
-    title: "Game emits events",
-    desc: "Player kills, round ends, match result",
+    title: "Games connect via SDK",
+    desc: "Any game plugs into the Eventra adapter with a few lines of code.",
   },
   {
-    icon: BarChart3,
-    title: "Eventra analyzes logs",
-    desc: "Deterministic, rule-based market generation",
+    icon: Bot,
+    title: "Agents play autonomously",
+    desc: "Rule-based autonomous agents replace human players entirely.",
+  },
+  {
+    icon: Radio,
+    title: "Events stream live",
+    desc: "Every action, kill, and round result is broadcast in real-time.",
   },
   {
     icon: Link2,
-    title: "Markets settle on-chain",
-    desc: "Trustless resolution on BNB Chain",
+    title: "Markets form & settle on-chain",
+    desc: "Prediction markets are created dynamically and settle on BNB Chain.",
   },
 ];
 
@@ -23,10 +28,10 @@ export default function WhatSection() {
   return (
     <section id="how" className="py-24">
       <div className="mx-auto max-w-5xl px-4 sm:px-6">
-        <h2 className="text-center font-pixel text-[10px] uppercase tracking-widest text-primary">How it works</h2>
-        <p className="mt-4 text-center font-pixel text-lg text-foreground">Three steps. Zero complexity.</p>
+        <h2 className="text-center font-pixel text-[10px] uppercase tracking-widest text-primary">What Eventra Is</h2>
+        <p className="mt-4 text-center font-pixel text-lg text-foreground">Four steps. Zero complexity.</p>
 
-        <div className="mt-16 grid gap-8 md:grid-cols-3">
+        <div className="mt-16 grid gap-8 md:grid-cols-4">
           {steps.map((s, i) => (
             <motion.div
               key={s.title}

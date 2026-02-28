@@ -123,6 +123,3 @@ This project was built focusing on creating the **infrastructure** to turn any g
 
 We explicitly focus on delivering verifiable determinism, agent orchestration, and automated on-chain settlement over a generic multi-game backend.
 
-<p align="center">
-  <b>Built for <a href="https://moltiverse.dev">Moltiverse.dev Hackathon</a></b>
-</p>

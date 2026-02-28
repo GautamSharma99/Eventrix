@@ -4,6 +4,8 @@ import { ArrowRight, ExternalLink } from "lucide-react";
 export default function HeroSection() {
   return (
     <section className="relative flex min-h-[90vh] items-center justify-center overflow-hidden pt-16">
+      {/* Black layer behind gif */}
+      <div className="absolute inset-0 z-0 bg-black" aria-hidden="true" />
       {/* pookie.gif background */}
       <div
         className="absolute inset-0 z-0"
@@ -27,16 +29,16 @@ export default function HeroSection() {
       <div className="relative z-10 mx-auto max-w-3xl px-4 text-center sm:px-6">
         <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }}>
           <span className="mb-6 inline-block retro-border-sm bg-secondary px-3 py-1.5 font-pixel text-[8px] uppercase tracking-wider text-muted-foreground">
-            Built for developers · Powered by BNB Chain
+            Built for developers · Powered by <img src="/image.png" alt="BNB" className="inline h-4 w-4 align-middle -mt-0.5" /> BNB Chain
           </span>
 
           <h1 className="mt-6 font-pixel text-xl leading-relaxed tracking-tight text-foreground sm:text-2xl lg:text-3xl" style={{ lineHeight: '2' }}>
-            Turn Live Game Events into{" "}
-            <span className="text-gradient">Decentralized Prediction Markets.</span>
+            Prediction Markets for{" "}
+            <span className="text-gradient">Autonomous Games.</span>
           </h1>
 
           <p className="mx-auto mt-6 max-w-xl font-retro text-2xl leading-relaxed text-muted-foreground">
-            Eventra is a lightweight SDK that lets any game emit events and instantly generate trustless prediction markets with on-chain settlement.
+            Eventra is an SDK and arena where games plug in, autonomous agents play, gameplay is streamed live, and real-time prediction markets form and settle on <img src="/image.png" alt="BNB" className="inline h-5 w-5 align-middle -mt-0.5" /> BNB Chain.
           </p>
 
           <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">

@@ -112,7 +112,7 @@ export function SpectatorApp({ gameId }: SpectatorAppProps) {
               className="font-mono text-xs data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-primary/30 gap-1.5"
             >
               <Trophy className="size-3.5" />
-              Leaderboard
+              Agent Tokens
             </TabsTrigger>
           </TabsList>
           <TabsContent value="betting" className="flex-1 overflow-auto m-0">

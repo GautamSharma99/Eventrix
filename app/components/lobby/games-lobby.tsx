@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
+import { useGameRegistry, useGamePrizePool } from "@/lib/contract-hooks"
+import { ethers } from "ethers"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -407,22 +409,65 @@ export function GamesLobby() {
     return () => clearInterval(interval)
   }, [tick])
 
+  const gameRegistry = useGameRegistry()
+  const prizePool = useGamePrizePool()
+  const [onChainGames, setOnChainGames] = useState<GameListing[]>([])
+
+  useEffect(() => {
+    async function fetchOnChain() {
+      if (!gameRegistry || !prizePool) return
+      try {
+        const _count = await gameRegistry.gameCount()
+        const count = Number(_count)
+        const fetchList: GameListing[] = []
+        for (let i = 1; i <= count; i++) {
+          const m = await gameRegistry.games(i)
+          const st = await prizePool.getGameStats(i)
+
+          let mstatus: GameStatus = "upcoming"
+          if (Number(m.status) === 1) mstatus = "live"
+          if (Number(m.status) === 2) mstatus = "ended"
+
+          fetchList.push({
+            id: `chain-${i}`,
+            title: `On-Chain Arena #${i}`,
+            status: mstatus,
+            viewers: Math.max(10, Number(ethers.formatEther(st.totalDeposited)) * 10000), // fake viewers based on pool
+            players: 10,
+            hypeScore: Number(st.totalDeposited) > BigInt(0) ? 85 : 10,
+            tokenPrice: 0.05,
+            priceChange: 0.5,
+            tokenTicker: "CHAIN",
+            tags: ["On-Chain", "Smart Contract"],
+            startTime: "Always",
+          })
+        }
+        setOnChainGames(fetchList.reverse())
+      } catch (e) {
+        console.error("Failed to load onchain games", e)
+      }
+    }
+    fetchOnChain()
+  }, [gameRegistry, prizePool])
+
+  const allVisibleGames = [...onChainGames, ...games]
+
   const filtered =
     filter === "all"
-      ? games
-      : games.filter((g) =>
+      ? allVisibleGames
+      : allVisibleGames.filter((g) =>
         filter === "live"
           ? g.status === "live" || g.status === "starting"
           : g.status === filter
       )
 
-  const featured = games.find((g) => g.status === "live" && g.hypeScore >= 70)
+  const featured = allVisibleGames.find((g) => g.status === "live" && g.hypeScore >= 70)
   const rest = filtered.filter((g) => g.id !== featured?.id)
   const counts = {
-    all: games.length,
-    live: games.filter((g) => g.status === "live" || g.status === "starting").length,
-    upcoming: games.filter((g) => g.status === "upcoming").length,
-    ended: games.filter((g) => g.status === "ended").length,
+    all: allVisibleGames.length,
+    live: allVisibleGames.filter((g) => g.status === "live" || g.status === "starting").length,
+    upcoming: allVisibleGames.filter((g) => g.status === "upcoming").length,
+    ended: allVisibleGames.filter((g) => g.status === "ended").length,
   }
 
 

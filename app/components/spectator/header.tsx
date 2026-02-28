@@ -1,8 +1,10 @@
 "use client"
 
 import { useGameStore } from "@/hooks/use-game-store"
+import { useWallet } from "@/hooks/wallet"
 import { Badge } from "@/components/ui/badge"
-import { Wifi, WifiOff, Loader2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Wifi, WifiOff, Loader2, Wallet } from "lucide-react"
 import type { GameListing } from "@/lib/games-data"
 
 const phaseLabels: Record<string, string> = {
@@ -25,6 +27,7 @@ interface SpectatorHeaderProps {
 
 export function SpectatorHeader({ gameMeta }: SpectatorHeaderProps) {
   const { phase, connectionStatus, leaderboard, markets, currentUserId } = useGameStore()
+  const { accountData, connectWallet } = useWallet()
   const leader = leaderboard[0]
   const you = leaderboard.find((entry) => entry.userId === currentUserId)
   const resolvedCount = markets.filter((market) => market.status === "RESOLVED").length
@@ -77,10 +80,23 @@ export function SpectatorHeader({ gameMeta }: SpectatorHeaderProps) {
           ) : (
             <WifiOff className="size-3.5 text-destructive" />
           )}
-          <span className="text-[10px] text-muted-foreground font-mono uppercase">
+          <span className="text-[10px] text-muted-foreground font-mono uppercase mr-2">
             {connectionStatus}
           </span>
         </div>
+
+        {/* Wallet */}
+        <Button
+          size="sm"
+          variant={accountData?.address ? "outline" : "default"}
+          onClick={connectWallet}
+          className="h-8 font-mono text-xs border-primary/30"
+        >
+          <Wallet className="size-3.5 mr-2" />
+          {accountData?.address
+            ? `${accountData.address.slice(0, 6)}...${accountData.address.slice(-4)}`
+            : "Connect Wallet"}
+        </Button>
       </div>
     </header>
   )

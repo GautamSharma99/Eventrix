@@ -29,8 +29,14 @@ except ImportError:
 # Web3 imports - handle gracefully if not installed
 try:
     from web3 import Web3
-    from web3.middleware.geth_poa import geth_poa_middleware
     from eth_account import Account
+    try:
+        from web3.middleware.geth_poa import geth_poa_middleware
+    except ImportError:
+        try:
+            from web3.middleware import ExtraDataToPOAMiddleware as geth_poa_middleware
+        except ImportError:
+            geth_poa_middleware = None
     WEB3_AVAILABLE = True
 except ImportError:
     WEB3_AVAILABLE = False

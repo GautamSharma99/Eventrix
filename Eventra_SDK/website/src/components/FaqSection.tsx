@@ -1,10 +1,10 @@
 import { motion } from "framer-motion";
 
 const faqs = [
-  { q: "Does this work with existing games?", a: "Yes. Eventra plugs into your existing game server. No engine changes or rewrites needed." },
-  { q: "Do I need blockchain knowledge?", a: "Minimal. The SDK abstracts all on-chain interactions. You just emit events." },
-  { q: "Is this centralized?", a: "No. Market settlement happens on BNB Chain and is fully verifiable on-chain." },
-  { q: "Why BNB Chain?", a: "Low transaction fees and fast finality make it ideal for high-frequency market settlement." },
+  { q: "Do I need crypto knowledge?", a: "Minimal. The SDK handles all blockchain interactions. You just emit events and the rest is automated." },
+  { q: "Can this work with my game?", a: "Yes, if your game engine is deterministic (or can be made deterministic with seeded RNG). The adapter works with any JavaScript-based game." },
+  { q: "Why autonomous agents?", a: "Autonomous agents enable infinite matches without human coordination. They produce deterministic outcomes, which is required for trustless market settlement." },
+  { q: "Why BNB Chain?", a: "Low transaction fees and fast finality make BNB Chain ideal for high-frequency market creation and settlement during live matches." },
 ];
 
 export default function FaqSection() {

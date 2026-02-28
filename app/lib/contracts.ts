@@ -16,11 +16,21 @@ export const bnbTestnet = {
   solidity: "^0.8.20",
 }
 
+export const CONTRACT_ADDRESSES = {
+  gameRegistry: process.env.NEXT_PUBLIC_GAME_REGISTRY || "0xA07DdE4d7Cc3d2122aC20F70133520946E588eCE",
+  predictionMarket: process.env.NEXT_PUBLIC_PREDICTION_MARKET || "0x6Bf43E463011066fAa65cFC5499CBc872a6b248E",
+  gameResolver: process.env.NEXT_PUBLIC_GAME_RESOLVER || "0x60eaEA0Edde98bf0B5A8C3C2FAc48213444bCCd9",
+  gamePrizePool: process.env.NEXT_PUBLIC_GAME_PRIZE_POOL || "0x01555aeb46F240D4437823d10fad21D032323B92",
+  agentRegistry: process.env.NEXT_PUBLIC_AGENT_REGISTRY || "0x77BEba0C93E0F93BEa328e79c1C9A7694a5c2615",
+  agentTokenRegistry: process.env.NEXT_PUBLIC_AGENT_TOKEN_REGISTRY || "0xdbfc97A6560a360ff02dd5f8F641B2991dB1024d",
+  persistentAgentToken: process.env.NEXT_PUBLIC_PERSISTENT_AGENT_TOKEN || "0x7603a62D192033ee58842ecDe5b07AE3429617E3",
+};
+
 export const contracts: ContractInfo[] = [
   {
     key: "gameRegistry",
     name: "GameRegistry",
-    address: "0xA07DdE4d7Cc3d2122aC20F70133520946E588eCE",
+    address: CONTRACT_ADDRESSES.gameRegistry,
     file: "src/GameRegistry.sol",
     purpose: "Registers games, stores resolver, manages CREATED -> RUNNING -> FINISHED lifecycle.",
     tags: ["core", "state"],
@@ -28,7 +38,7 @@ export const contracts: ContractInfo[] = [
   {
     key: "predictionMarket",
     name: "PredictionMarket",
-    address: "0x6Bf43E463011066fAa65cFC5499CBc872a6b248E",
+    address: CONTRACT_ADDRESSES.predictionMarket,
     file: "src/PredictionMarket.sol",
     purpose: "Binary YES/NO markets funded in BNB; handles bets, resolution, and claims.",
     tags: ["markets", "payouts"],
@@ -36,7 +46,7 @@ export const contracts: ContractInfo[] = [
   {
     key: "gameResolver",
     name: "GameResolver",
-    address: "0x60eaEA0Edde98bf0B5A8C3C2FAc48213444bCCd9",
+    address: CONTRACT_ADDRESSES.gameResolver,
     file: "src/GameResolver.sol",
     purpose: "Owner-run coordinator that finalizes a game and resolves linked markets in one tx.",
     tags: ["orchestration"],
@@ -45,7 +55,7 @@ export const contracts: ContractInfo[] = [
   {
     key: "gamePrizePool",
     name: "GamePrizePool",
-    address: "0x01555aeb46F240D4437823d10fad21D032323B92",
+    address: CONTRACT_ADDRESSES.gamePrizePool,
     file: "src/GamePrizePool.sol",
     purpose: "Splits deposits 90% prize / 10% platform; distributes BNB to winning agent tokens.",
     tags: ["treasury", "rewards"],
@@ -53,7 +63,7 @@ export const contracts: ContractInfo[] = [
   {
     key: "agentRegistry",
     name: "AgentRegistry",
-    address: "0x77BEba0C93E0F93BEa328e79c1C9A7694a5c2615",
+    address: CONTRACT_ADDRESSES.agentRegistry,
     file: "src/AgentRegistry.sol",
     purpose: "Open stats tracker for agents (games played/won).",
     tags: ["stats"],
@@ -62,7 +72,7 @@ export const contracts: ContractInfo[] = [
   {
     key: "agentTokenRegistry",
     name: "AgentTokenRegistry",
-    address: "0xdbfc97A6560a360ff02dd5f8F641B2991dB1024d",
+    address: CONTRACT_ADDRESSES.agentTokenRegistry,
     file: "src/AgentTokenRegistry.sol",
     purpose: "Factory + registry for PersistentAgentToken with 1,000,000 initial supply.",
     tags: ["factory"],
@@ -70,7 +80,7 @@ export const contracts: ContractInfo[] = [
   {
     key: "persistentAgentToken",
     name: "PersistentAgentToken",
-    address: "0x7603a62D192033ee58842ecDe5b07AE3429617E3",
+    address: CONTRACT_ADDRESSES.persistentAgentToken,
     file: "src/PersistentAgentToken.sol",
     purpose: "ERC20 per agent; tracks stats and receives BNB rewards from GamePrizePool.",
     tags: ["erc20", "agents"],

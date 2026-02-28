@@ -36,7 +36,7 @@
         # Info text block — below the agent list with proper spacing
         info_font = pg.font.Font(None, 36)
         info_lines = [
-            ("Buy agent tokens now!", WHITE),
+            ("Enter the room asap!", WHITE),
             ("Trading will lock when the game starts.", WHITE),
             ("Winners' token holders split 90% of prize pool.", (100, 220, 100)),
         ]

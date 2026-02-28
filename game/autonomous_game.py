@@ -295,19 +295,24 @@ class AutonomousGame:
         ent.vel = vec(0, 0)
         imgs, attr = None, None
 
-        if direction == "LEFT":
+        # Map boundary limits (with a small margin)
+        map_w = self.game.map.width - 64   # sprite width ~64
+        map_h = self.game.map.height - 86  # sprite height ~86
+        margin = 10
+
+        if direction == "LEFT" and ent.pos.x > margin:
             ent.vel.x = -PLAYER_SPEED
             imgs = ent.player_imgs_left
             attr = "left_img_index"
-        elif direction == "RIGHT":
+        elif direction == "RIGHT" and ent.pos.x < map_w:
             ent.vel.x = PLAYER_SPEED
             imgs = ent.player_imgs_right
             attr = "right_img_index"
-        elif direction == "UP":
+        elif direction == "UP" and ent.pos.y > margin:
             ent.vel.y = -PLAYER_SPEED
             imgs = ent.player_imgs_up
             attr = "up_img_index"
-        elif direction == "DOWN":
+        elif direction == "DOWN" and ent.pos.y < map_h:
             ent.vel.y = PLAYER_SPEED
             imgs = ent.player_imgs_down
             attr = "down_img_index"
@@ -883,6 +888,32 @@ class AutonomousGame:
                 # Physics
                 self.game.all_sprites.update()
 
+                # Boundary clamp — keep agents inside the ship's playable area
+                # Ship area derived from spawn positions and bot placements
+                SHIP_MIN_X, SHIP_MAX_X = 400, 5700
+                SHIP_MIN_Y, SHIP_MAX_Y = 100, 3200
+                for c in self.all_colours:
+                    ent = self.entities[c]
+                    if not ent.alive_status:
+                        continue
+                    clamped = False
+                    if ent.pos.x < SHIP_MIN_X:
+                        ent.pos.x = SHIP_MIN_X
+                        clamped = True
+                    elif ent.pos.x > SHIP_MAX_X:
+                        ent.pos.x = SHIP_MAX_X
+                        clamped = True
+                    if ent.pos.y < SHIP_MIN_Y:
+                        ent.pos.y = SHIP_MIN_Y
+                        clamped = True
+                    elif ent.pos.y > SHIP_MAX_Y:
+                        ent.pos.y = SHIP_MAX_Y
+                        clamped = True
+                    if clamped:
+                        ent.vel = vec(0, 0)
+                        ent.rect.x = ent.pos.x
+                        ent.rect.y = ent.pos.y
+
                 # Body detection → meeting
                 self._check_body_detection()
 
@@ -941,7 +972,7 @@ class AutonomousGame:
 
         # Info text block — well below the agent list
         info_lines = [
-            ("Buy agent tokens now!",                              WHITE),
+            ("Enter the room now!",                              WHITE),
             ("Trading will lock when the game starts.",            WHITE),
             ("Winners' token holders split 90% of prize pool.",   (100, 220, 100)),
         ]

@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono, Space_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { WalletProvider } from '@/hooks/wallet'
+import { Toaster } from 'sonner'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -41,7 +43,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="font-sans antialiased overflow-hidden" suppressHydrationWarning>
-        {children}
+        <WalletProvider>
+          {children}
+        </WalletProvider>
+        <Toaster theme="dark" position="top-right" />
         <Analytics />
       </body>
     </html>
