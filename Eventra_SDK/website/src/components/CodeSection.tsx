@@ -1,15 +1,21 @@
 import { motion } from "framer-motion";
 
-const code = `adapter.emit({
-  type: "PLAYER_KILLED",
-  payload: { killer: "A", victim: "B" },
-  timestamp: Date.now()
-})`;
+const code = `import { PredictionArena } from "@eventra/sdk"
+
+const arena = new PredictionArena({
+  chainId: 97,
+  rpcUrl: "https://data-seed-prebsc-1-s1.bnbchain.org:8545"
+})
+
+arena.emit({ type: "PLAYER_KILLED", payload: { killer: "A", victim: "B" } })`;
 
 export default function CodeSection() {
   return (
-    <section className="py-24">
+    <section id="quickstart" className="py-24">
       <div className="mx-auto max-w-3xl px-4 sm:px-6">
+        <h2 className="text-center font-pixel text-[10px] uppercase tracking-widest text-primary">Developer Quick Start</h2>
+        <p className="mt-4 mb-12 text-center font-pixel text-lg text-foreground">Integrate in under 10 lines.</p>
+
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -31,7 +37,7 @@ export default function CodeSection() {
         </motion.div>
 
         <div className="mt-6 space-y-2 text-center">
-          <p className="font-retro text-xl text-muted-foreground">▸ Markets are automatically created and updated.</p>
+          <p className="font-retro text-xl text-muted-foreground">▸ Once events flow, markets are generated automatically.</p>
           <p className="font-retro text-xl text-muted-foreground">▸ No manual market definitions required.</p>
         </div>
       </div>
