@@ -3,70 +3,53 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(req: NextRequest) {
   try {
     const { logs } = await req.json();
-    console.log("Logs:", logs);
 
-    const systemPrompt = `You are an AI generating dynamic Prediction Market questions for an autonomous AI-only Among Us game. 
-You will be provided with a stream of event logs. 
-Analyze the logs to understand what is currently happening (e.g. who is dying, who is suspected, etc.). 
-Generate exactly 3 intriguing, highly speculative YES/NO prediction questions based on the characters and situations present in the logs. 
-Output ONLY a raw JSON array of strings containing your questions. No markdown framing, no backticks, no introductions.
+    console.log("Logs: ", logs)
 
-Example output:
-[
-  "Will Red survive this round?",
-  "Will the Imposter kill Blue next?",
-  "Is Green going to be ejected in the next meeting?"
-]`;
+    const systemPrompt = `
+You are an AI generating dynamic Prediction Market questions for an autonomous AI-only Among Us game.
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
+You will be provided with a stream of event logs.
+Analyze the logs to understand what is currently happening.
+Generate exactly 3 intriguing, highly speculative YES/NO prediction questions.
+
+Output ONLY a raw JSON array of strings.
+No markdown. No explanations.
+`;
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-      model: 'z-ai/glm-4.5-air:free',
-      messages: [
-        {
-          role: 'system',
-          content: systemPrompt,
-        },
-        {
-          role: 'user',
-          content: `Game logs:\n${logs}`,
-        },
-      ],
-    }),
-  });
+        model: "gpt-4o-mini",
+        temperature: 0.8,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `Game logs:\n${logs}` },
+        ],
+      }),
+    });
 
-  console.log("OpenRouter API response:", response);
+    console.log("Response: ", response)
 
     if (!response.ok) {
-        const err = await response.text();
-        console.error("OpenRouter API error:", err);
-        return NextResponse.json({ error: "Failed fetching from AI" }, { status: 500 });
+      const err = await response.text();
+      console.error("AI error:", err);
+      return NextResponse.json({ error: "AI request failed" }, { status: 500 });
     }
 
     const data = await response.json();
-    const rawContent = data.choices?.[0]?.message?.content?.trim() || "[]";
-    
-    // Attempt to extract the JSON array in case the LLM wrapped it in markdown
-    const jsonMatch = rawContent.match(/\[[\s\S]*\]/);
-    const cleanedContent = jsonMatch ? jsonMatch[0] : rawContent;
-    
-    let questions = [];
-    try {
-        questions = JSON.parse(cleanedContent);
-    } catch (parseErr) {
-        console.error("Failed to parse AI output:", cleanedContent);
-        return NextResponse.json({ error: "Invalid AI format" }, { status: 500 });
-    }
+    const content = data?.choices?.[0]?.message?.content || "[]";
 
-    console.log("AI Generated Questions:", questions);
-    return NextResponse.json({ questions });
+    const match = content.match(/\[[\s\S]*\]/);
+    const parsed = JSON.parse(match ? match[0] : content);
 
+    return NextResponse.json({ questions: parsed });
   } catch (err: any) {
-    console.error("API Route Error:", err);
+    console.error("Route error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

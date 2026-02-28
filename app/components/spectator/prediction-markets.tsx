@@ -33,6 +33,9 @@ export function PredictionMarkets() {
   const { feed } = useGameStore()
   const [questions, setQuestions] = useState<string[]>([])
   const lastRequestRef = useRef(0);
+  const [aiPending, setAiPending] = useState<Record<number, string>>({});  // index -> "yes"|"no"
+
+  console.log("Feed: ", feed)
 
   // Poll for AI suggestions whenever the feed updates
   useEffect(() => {
@@ -47,6 +50,8 @@ export function PredictionMarkets() {
       .map(e => `${e.type}: ${e.message}`)
       .join("\n")
 
+    console.log("Logs: ", logs)
+
     fetch("/api/ai-model", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -58,7 +63,7 @@ export function PredictionMarkets() {
       })
       .catch(() => { })
   }, [feed])
-
+  console.log("Questions: ", questions)
   const fetchMarkets = async () => {
     if (!predictionMarketContract) return;
 
@@ -171,9 +176,71 @@ export function PredictionMarkets() {
     return { yes: yesOdds, no: 100 - yesOdds };
   };
 
+  // Handle betting on an AI-suggested question
+  const handleAISuggestionBet = async (questionIndex: number, isYes: boolean) => {
+    const question = questions[questionIndex];
+    if (!question) return;
+
+    if (!predictionMarketContract || !predictionMarketContract.runner) {
+      toast.error("Please connect wallet first");
+      return;
+    }
+
+    await switchToBscTestnet();
+
+    setAiPending(prev => ({ ...prev, [questionIndex]: isYes ? "yes" : "no" }));
+
+    try {
+      // Step 1: Create market on-chain via server API (owner-only)
+      toast.info("Creating market on-chain...");
+      const res = await fetch("/api/create-market", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question, gameId: 1 }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to create market");
+      }
+
+      const { marketId, txHash } = await res.json();
+      console.log(`Market #${marketId} created on-chain: ${txHash}`);
+
+      // Step 2: Place bet via user's wallet
+      toast.info(`Market created! Placing ${isYes ? "YES" : "NO"} bet...`);
+      const betAmount = ethers.parseEther("0.01");
+      const tx = isYes
+        ? await predictionMarketContract.betYes(marketId, { value: betAmount })
+        : await predictionMarketContract.betNo(marketId, { value: betAmount });
+
+      await tx.wait();
+      toast.success(`Bet placed on "${question.slice(0, 40)}..." ✓`);
+
+      // Remove the question from suggestions since it's now an on-chain market
+      setQuestions(prev => prev.filter((_, i) => i !== questionIndex));
+
+      // Refresh on-chain markets list
+      await fetchMarkets();
+    } catch (e: any) {
+      console.error("AI suggestion bet error:", e);
+      if (e.code !== "ACTION_REJECTED") {
+        toast.error("Transaction failed: " + (e.reason || e.message));
+      } else {
+        toast.info("Transaction cancelled");
+      }
+    } finally {
+      setAiPending(prev => {
+        const next = { ...prev };
+        delete next[questionIndex];
+        return next;
+      });
+    }
+  };
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/50">
+    <div className="flex flex-col h-full bg-[#0a0a0f]">
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/50 bg-[#0d0d15]">
         <BarChart3 className="size-3.5 text-primary" />
         <span className="font-mono text-xs font-bold text-foreground tracking-wider uppercase">
           On-Chain Markets
@@ -325,9 +392,11 @@ export function PredictionMarkets() {
             })}
           </div>
         </div>
-      {/* AI Suggestions Section */}
+      )}
+
+      {/* AI Suggestions Section — always visible when questions exist */}
       {questions.length > 0 && (
-        <div className="mt-6 border-t border-border/50 pt-5 px-4 pb-6 bg-primary/[0.02]">
+        <div className="border-t border-border/50 pt-5 px-4 pb-6 bg-[#0d0d15]">
           <div className="flex items-center gap-2 mb-4">
             <Sparkles className="size-3.5 text-primary animate-pulse" />
             <span className="font-mono text-[10px] font-bold text-muted-foreground tracking-widest uppercase">
@@ -339,24 +408,33 @@ export function PredictionMarkets() {
             {questions.map((q, i) => (
               <div key={i} className="rounded-xl border border-primary/20 bg-background/50 p-4 flex flex-col gap-3 shadow-sm hover:border-primary/40 transition-colors">
                 <p className="text-xs font-semibold leading-relaxed text-foreground/90 italic">
-                  "{q}"
+                  {`"${q}"`}
                 </p>
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
                     size="sm"
                     className="flex-1 font-mono text-[10px] h-8 bg-green-500/5 text-green-500 border-green-500/30 hover:bg-green-500/20"
+                    onClick={() => handleAISuggestionBet(i, true)}
+                    disabled={!!aiPending[i] || !accountData?.address}
                   >
-                    YES
+                    {aiPending[i] === "yes" ? "Creating..." : "YES (0.01 BNB)"}
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     className="flex-1 font-mono text-[10px] h-8 bg-red-500/5 text-red-500 border-red-500/30 hover:bg-red-500/20"
+                    onClick={() => handleAISuggestionBet(i, false)}
+                    disabled={!!aiPending[i] || !accountData?.address}
                   >
-                    NO
+                    {aiPending[i] === "no" ? "Creating..." : "NO (0.01 BNB)"}
                   </Button>
                 </div>
+                {!accountData?.address && (
+                  <p className="text-[9px] text-muted-foreground font-mono text-center">
+                    Connect wallet to bet
+                  </p>
+                )}
               </div>
             ))}
           </div>

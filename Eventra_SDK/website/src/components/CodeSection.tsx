@@ -4,10 +4,12 @@ const code = `import { PredictionArena } from "@eventra/sdk"
 
 const arena = new PredictionArena({
   chainId: 97,
-  rpcUrl: "https://data-seed-prebsc-1-s1.bnbchain.org:8545"
-})
+  rpcUrl: "https://data-seed-prebsc-1-s1.bnbchain.org:8545",
+  marketTemplates: [{ id: "winner", triggerEvent: "GAME_START",
+    description: "Match Winner", outcomeResolver: "winner" }]
+}, myGameInstance)
 
-arena.emit({ type: "PLAYER_KILLED", payload: { killer: "A", victim: "B" } })`;
+arena.adapter.start()  // events flow → markets auto-generate`;
 
 export default function CodeSection() {
   return (
