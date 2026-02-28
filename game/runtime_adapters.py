@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import random
+import threading
 from typing import Any, Protocol
 
 import pygame as pg
@@ -165,6 +166,40 @@ class LegacyEventRuntime:
     def on_meeting_start(self, caller: str) -> None:
         self.chain.logger.log_meeting(caller)
         self.emitter.meeting_start(caller)
+        self._trigger_ai_questions()
+
+    def _trigger_ai_questions(self) -> None:
+        def task():
+            try:
+                import requests
+                import json
+                # Get last N events to context window
+                events = self.chain.logger.events[-30:]
+                if not events:
+                    return
+                
+                print("  [AI] Fetching dynamic prediction markets from Next.js server...")
+                logs = "\n".join([json.dumps(e.to_dict()) for e in events])
+                
+                # Default NextJS port is 3000
+                api_url = os.environ.get("NEXT_PUBLIC_FRONTEND_URL", "http://localhost:3000") + "/api/ai-model"
+                resp = requests.post(api_url, json={"logs": logs}, timeout=15)
+                
+                if resp.status_code == 200:
+                    data = resp.json()
+                    questions = data.get("questions", [])
+                    for q in questions:
+                        print(f"  [AI] Dynamic Market Created: {q}")
+                        if self.chain.game_id is not None:
+                            # Push market to chain automatically
+                            m_id = self.chain.connector.create_market(self.chain.game_id, q)
+                            self.chain.markets[f"DYNAMIC_{m_id}"] = m_id
+                else:
+                    print(f"  [AI] Server returned {resp.status_code}: {resp.text}")
+            except Exception as e:
+                print(f"  [AI] Failed to generate dynamic questions: {e}")
+                
+        threading.Thread(target=task, daemon=True).start()
 
     def on_agent_spoke(self, agent: str, message: str) -> None:
         self.chain.logger.log_speak(agent, message)

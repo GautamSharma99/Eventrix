@@ -4,8 +4,9 @@ import { usePredictionMarket } from "@/lib/contract-hooks"
 import { useWallet } from "@/hooks/wallet"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { TrendingUp, Lock, CheckCircle2, XCircle, BarChart3, Coins } from "lucide-react"
-import { useEffect, useState } from "react"
+import { TrendingUp, Lock, CheckCircle2, XCircle, BarChart3, Coins, Sparkles } from "lucide-react"
+import { useEffect, useState, useRef } from "react"
+import { useGameStore } from "@/hooks/use-game-store"
 import { toast } from "sonner"
 import { ethers } from "ethers"
 
@@ -27,6 +28,36 @@ export function PredictionMarkets() {
   const [realMarkets, setRealMarkets] = useState<OnChainMarket[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [txPending, setTxPending] = useState<Record<number, boolean>>({});
+
+  // AI Suggestions
+  const { feed } = useGameStore()
+  const [questions, setQuestions] = useState<string[]>([])
+  const lastRequestRef = useRef(0);
+
+  // Poll for AI suggestions whenever the feed updates
+  useEffect(() => {
+    if (!feed || feed.length < 3) return;
+
+    const now = Date.now();
+    if (now - lastRequestRef.current < 8000) return;
+
+    lastRequestRef.current = now;
+    const logs = feed
+      .slice(0, 8)
+      .map(e => `${e.type}: ${e.message}`)
+      .join("\n")
+
+    fetch("/api/ai-model", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ logs })
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d?.questions) setQuestions(d.questions)
+      })
+      .catch(() => { })
+  }, [feed])
 
   const fetchMarkets = async () => {
     if (!predictionMarketContract) return;
@@ -293,6 +324,45 @@ export function PredictionMarkets() {
               )
             })}
           </div>
+        </div>
+      {/* AI Suggestions Section */}
+      {questions.length > 0 && (
+        <div className="mt-6 border-t border-border/50 pt-5 px-4 pb-6 bg-primary/[0.02]">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="size-3.5 text-primary animate-pulse" />
+            <span className="font-mono text-[10px] font-bold text-muted-foreground tracking-widest uppercase">
+              AI Dynamic Suggestions
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {questions.map((q, i) => (
+              <div key={i} className="rounded-xl border border-primary/20 bg-background/50 p-4 flex flex-col gap-3 shadow-sm hover:border-primary/40 transition-colors">
+                <p className="text-xs font-semibold leading-relaxed text-foreground/90 italic">
+                  "{q}"
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 font-mono text-[10px] h-8 bg-green-500/5 text-green-500 border-green-500/30 hover:bg-green-500/20"
+                  >
+                    YES
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 font-mono text-[10px] h-8 bg-red-500/5 text-red-500 border-red-500/30 hover:bg-red-500/20"
+                  >
+                    NO
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-[9px] text-muted-foreground font-mono mt-4 text-center opacity-60">
+            These questions are generated in real-time by the AI observer based on game events.
+          </p>
         </div>
       )}
     </div>
