@@ -131,6 +131,42 @@ async def start_game():
     return {"game_id": game_id, "status": "starting"}
 
 
+@app.post("/game/start-chess")
+async def start_chess_game():
+    """Spawn a new chess game subprocess tagged as game-002."""
+    game_id = "game-002"
+    demo_dir = Path(__file__).parent.parent / "demo_game" / "src"
+
+    try:
+        import os
+        env = {**os.environ, "BRIDGE_GAME_ID": game_id}
+        proc = subprocess.Popen(
+            [sys.executable, "main.py"],
+            cwd=str(demo_dir),
+            env=env,
+        )
+        game_processes[game_id] = proc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    active_games[game_id] = {
+        "id": game_id,
+        "title": "Live Chess — Autonomous Agents",
+        "status": "starting",
+        "players": 2,
+        "viewers": 0,
+        "tokenTicker": "$SUS",
+        "tokenPrice": 0.001,
+        "priceChange": 0,
+        "hypeScore": 0,
+        "startTime": "Just started",
+        "tags": ["New", "Live", "Chess"],
+        "started_at": time.time(),
+    }
+
+    return {"game_id": game_id, "status": "starting"}
+
+
 # ---------------------------------------------------------------------------
 # REST — Event ingestion endpoint (game engine → bridge)
 # ---------------------------------------------------------------------------
@@ -306,6 +342,7 @@ if __name__ == "__main__":
     print("=" * 50)
     print("  MonadSus Bridge Server")
     print("  http://localhost:8000")
-    print("  Game stream: ws://localhost:8000/ws/game/game-001")
+    print("  Among Us: ws://localhost:8000/ws/video/game-001")
+    print("  Chess:    ws://localhost:8000/ws/video/game-002")
     print("=" * 50)
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")

@@ -1,7 +1,7 @@
 """
 Autonomous Agent Game Mode for MonadSus.
 
-Runs a full match where every player is an autonomous AI agent.
+Runs a full match where every player is an autonomous agent.
 No keyboard or mouse input is used for gameplay.
 Humans are spectators only — they can switch camera views.
 
@@ -18,18 +18,13 @@ from __future__ import annotations
 
 import random
 import math
-import os
 import pygame as pg
 import sys
-from os import path
 
 from game import Game
 from sprites import Player, Bot
 from settings import *
-from agent_controller import SimpleAgent
-from bnb.blockchain import MonadSusChainIntegration
-from ws_emitter import GameEmitter
-from frame_streamer import FrameStreamer
+from runtime_adapters import AgentRuntime, EventRuntime, LocalAgentRuntime, build_event_runtime
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +63,7 @@ vec = pg.math.Vector2
 # ---------------------------------------------------------------------------
 
 class AutonomousGame:
-    """Runs a fully autonomous Among Us match with AI agents."""
+    """Runs a fully autonomous Among Us match with injected runtime adapters."""
 
     # Tunable constants
     KILL_RANGE            = 120     # px — distance for imposter kill
@@ -86,12 +81,17 @@ class AutonomousGame:
     PRE_GAME_TRADING_DURATION = 30  # 30 seconds
     PRE_GAME_TRADING_TICKS = PRE_GAME_TRADING_DURATION * 60  # Convert to ticks @ 60 FPS
 
-    def __init__(self):
+    def __init__(
+        self,
+        agent_runtime: AgentRuntime | None = None,
+        event_runtime: EventRuntime | None = None,
+    ):
         self.color_sprites = build_color_sprites()
         self.game = Game()
+        self.agent_runtime: AgentRuntime = agent_runtime or LocalAgentRuntime()
+        self.event_runtime: EventRuntime = event_runtime or build_event_runtime()
 
         # Agent / entity maps
-        self.agents = {}          # colour → SimpleAgent
         self.entities = {}        # colour → sprite
         self.all_colours = []
         self.imposter_colour = None
@@ -140,19 +140,7 @@ class AutonomousGame:
         self.dim_screen: pg.Surface | None = None
         self.event_log: list[str] = []
         
-        # Blockchain integration
-        # Set MONAD_LIVE_MODE=1 to enable real blockchain transactions
-        # Requires MONAD_RPC_URL, MONAD_PRIVATE_KEY, and contract addresses
-        live_mode = os.environ.get("MONAD_LIVE_MODE", "").lower() in ("1", "true", "yes")
-        self.chain = MonadSusChainIntegration(live_mode=live_mode)
-        self.game_id: int | None = None
-
-        # WebSocket bridge emitter (fire-and-forget, bridge may be offline)
-        bridge_game_id = os.environ.get("BRIDGE_GAME_ID", "game-001")
-        self.emitter = GameEmitter(bridge_game_id)
-
-        # Frame streamer — sends pygame visuals to browser at ~10 FPS
-        self.frame_streamer = FrameStreamer(game_id=bridge_game_id)
+        # External integrations are handled by event_runtime.
 
     # ------------------------------------------------------------------
     # Setup
@@ -203,30 +191,10 @@ class AutonomousGame:
         # Pick random imposter
         self.imposter_colour = random.choice(self.all_colours)
 
-        # Create agents
+        assert self.imposter_colour is not None
+        self.agent_runtime.initialize(self.all_colours, self.imposter_colour)
         for colour in self.all_colours:
-            role = "IMPOSTER" if colour == self.imposter_colour else "CREW"
-            
-            # Choose agent type based on config
-            agent_mode = os.environ.get("AGENT_MODE", "simple")
-            
-            if agent_mode == "openclaw":
-                try:
-                    from openclaw_agent import OpenClawAgentController
-                    # Assign varied personalities for diversity
-                    personality = self._assign_personality(colour, role)
-                    self.agents[colour] = OpenClawAgentController(
-                        agent_id=colour,
-                        role=role,
-                        personality_type=personality
-                    )
-                except ImportError as e:
-                    print(f"  [WARN] OpenClaw not available: {e}, using SimpleAgent")
-                    self.agents[colour] = SimpleAgent(agent_id=colour, role=role)
-            else:
-                # Fallback to simple random agent
-                self.agents[colour] = SimpleAgent(agent_id=colour, role=role)
-            
+            role = self.agent_runtime.role_for(colour)
             self.entities[colour].imposter = (role == "IMPOSTER")
 
         # Camera starts following the imposter
@@ -243,9 +211,7 @@ class AutonomousGame:
         pg.mixer.music.play(-1)
         pg.mixer.music.set_volume(0.5)
 
-        # Initialize blockchain integration
-        self.game_id = self.chain.on_game_start(self.all_colours, self.imposter_colour)
-        self.emitter.game_start(self.all_colours, self.imposter_colour or "")
+        self.event_runtime.on_game_start(self.all_colours, self.imposter_colour or "")
 
         self._log(f"Match started — {len(self.all_colours)} agents")
         self._log(f"Imposter: {self.imposter_colour}")
@@ -262,13 +228,6 @@ class AutonomousGame:
     # Helpers
     # ------------------------------------------------------------------
     
-    def _assign_personality(self, colour: str, role: str) -> str:
-        """Assign diverse personalities to agents for varied gameplay."""
-        if role == "IMPOSTER":
-            return random.choice(["aggressive", "subtle"])
-        else:  # CREW
-            return random.choice(["detective", "follower", "balanced"])
-
     def _log(self, msg):
         self.event_log.append(msg)
         if len(self.event_log) > 6:
@@ -280,7 +239,7 @@ class AutonomousGame:
         # Console output
         print(f"  [{self.tick // 60:>3}s] [{agent_id}]: {message}")
         # Blockchain event log
-        self.chain.logger.log_speak(agent_id, message)
+        self.event_runtime.on_agent_spoke(agent_id, message)
 
     def alive_colours(self):
         return [c for c in self.all_colours if self.entities[c].alive_status]
@@ -316,11 +275,11 @@ class AutonomousGame:
             "nearby_agents":  nearby,
             "alive_agents":   [c for c in alive if c != colour],
             "dead_agents":    dead,
-            "role":           self.agents[colour].role,
+            "role":           self.agent_runtime.role_for(colour),
             "meeting_active": self.meeting_active,
             "meeting_phase":  phase_name,
             "can_kill":       (
-                self.agents[colour].role == "IMPOSTER"
+                self.agent_runtime.role_for(colour) == "IMPOSTER"
                 and self.kill_cooldown <= 0
                 and not self.meeting_active
                 and ent.alive_status
@@ -367,7 +326,7 @@ class AutonomousGame:
         victim = self.entities[victim_c]
 
         if (not victim.alive_status or not killer.alive_status
-                or self.agents[killer_c].role != "IMPOSTER"
+                or self.agent_runtime.role_for(killer_c) != "IMPOSTER"
                 or self.kill_cooldown > 0):
             return False
         if self._dist(killer, victim) > self.KILL_RANGE:
@@ -397,8 +356,7 @@ class AutonomousGame:
             pass
 
         self._log(f"{killer_c} killed {victim_c}!")
-        self.chain.logger.log_kill(killer_c, victim_c)
-        self.emitter.kill(killer_c, victim_c)
+        self.event_runtime.on_kill(killer_c, victim_c)
         return True
 
     # ------------------------------------------------------------------
@@ -421,8 +379,8 @@ class AutonomousGame:
         self.spoken_agents = set()
         self.current_speaker_idx = 0
         
-        for agent in self.agents.values():
-            agent.reset_vote()
+        for colour in self.all_colours:
+            self.agent_runtime.reset_vote(colour)
         for c in self.all_colours:
             self.entities[c].vel = vec(0, 0)
 
@@ -435,8 +393,7 @@ class AutonomousGame:
             pass
 
         self._log(f"Meeting called by {trigger_colour}!")
-        self.chain.logger.log_meeting(trigger_colour)
-        self.emitter.meeting_start(trigger_colour)
+        self.event_runtime.on_meeting_start(trigger_colour)
 
     def _process_votes(self):
         """Return colour to eject (or None for skip / tie)."""
@@ -466,8 +423,7 @@ class AutonomousGame:
         
         # Log votes to blockchain and emit to bridge
         for voter, target in self.votes.items():
-            self.chain.logger.log_vote(voter, target)
-            self.emitter.vote_cast(voter, target)
+            self.event_runtime.on_vote_cast(voter, target)
 
         if ejected:
             self.eject_active = True
@@ -475,13 +431,12 @@ class AutonomousGame:
             self.ejected_colour = ejected
             self.entities[ejected].alive_status = False
             self.entities[ejected].vel = vec(0, 0)
-            imp = self.agents[ejected].role == "IMPOSTER"
+            imp = self.agent_runtime.role_for(ejected) == "IMPOSTER"
             self._log(
                 f"{ejected} was ejected! "
                 + ("They were the Imposter!" if imp else "They were NOT the Imposter.")
             )
-            self.chain.logger.log_eject(ejected, imp)
-            self.emitter.ejection(ejected, imp)
+            self.event_runtime.on_ejection(ejected, imp)
         else:
             self._log("No one was ejected (tie or skip).")
 
@@ -505,7 +460,7 @@ class AutonomousGame:
         if not self.dead_bodies or self.meeting_active or self.meeting_cooldown > 0:
             return
         for c in self.alive_colours():
-            if self.agents[c].role == "IMPOSTER":
+            if self.agent_runtime.role_for(c) == "IMPOSTER":
                 continue
             ent = self.entities[c]
             for bx, by, _ in self.dead_bodies:
@@ -519,31 +474,29 @@ class AutonomousGame:
 
     def _check_win(self):
         alive = self.alive_colours()
-        crew   = [c for c in alive if self.agents[c].role == "CREW"]
-        imps   = [c for c in alive if self.agents[c].role == "IMPOSTER"]
+        crew   = [c for c in alive if self.agent_runtime.role_for(c) == "CREW"]
+        imps   = [c for c in alive if self.agent_runtime.role_for(c) == "IMPOSTER"]
 
         if not imps:
             self.game_over = True
             self.winner = "CREW"
             self._log("CREW WINS — the imposter was eliminated!")
-            self.emitter.game_end("crew", self.imposter_colour or "")
-            self._settle_blockchain()
+            self._emit_game_end()
             return True
         if len(imps) >= len(crew):
             self.game_over = True
             self.winner = "IMPOSTER"
             self._log("IMPOSTER WINS — crew is outnumbered!")
-            self.emitter.game_end("imposter", self.imposter_colour or "")
-            self._settle_blockchain()
+            self._emit_game_end()
             return True
         return False
 
-    def _settle_blockchain(self):
-        """Settle all prediction markets and update agent stats on-chain."""
+    def _emit_game_end(self):
+        """Emit game resolution to the configured event runtime."""
         assert self.winner is not None
         assert self.imposter_colour is not None
         alive = self.alive_colours()
-        self.chain.on_game_end(self.winner, self.imposter_colour, alive)
+        self.event_runtime.on_game_end(self.winner, self.imposter_colour, alive)
 
     # ------------------------------------------------------------------
     # Event handling (spectator controls only)
@@ -552,11 +505,13 @@ class AutonomousGame:
     def _handle_events(self):
         for event in pg.event.get():
             if event.type == pg.QUIT:
+                self.event_runtime.close()
                 pg.quit()
                 sys.exit()
             if event.type != pg.KEYDOWN:
                 continue
             if event.key == pg.K_ESCAPE:
+                self.event_runtime.close()
                 pg.quit()
                 sys.exit()
             # Number keys 1-9 to pick camera target
@@ -625,7 +580,7 @@ class AutonomousGame:
             self._draw_game_over(screen)
 
         # Stream this frame to the bridge server (spectator video)
-        self.frame_streamer.submit(screen)
+        self.event_runtime.stream_frame(screen)
 
         pg.display.flip()
 
@@ -650,7 +605,7 @@ class AutonomousGame:
             f"Time: {secs // 60}:{secs % 60:02d}", True, WHITE), (200, 45))
 
         target_c = self.all_colours[self.camera_target_idx % len(self.all_colours)]
-        role = self.agents[target_c].role
+        role = self.agent_runtime.role_for(target_c)
         clr = (255, 80, 80) if role == "IMPOSTER" else (100, 255, 100)
         screen.blit(self.hud_font_sm.render(
             f"Following: {target_c} ({role})", True, clr), (20, 70))
@@ -757,7 +712,7 @@ class AutonomousGame:
     def _draw_eject(self, screen):
         assert self.hud_font and self.hud_font_lg and self.dim_screen
         screen.blit(self.dim_screen, (0, 0))
-        imp = self.agents[self.ejected_colour].role == "IMPOSTER"
+        imp = self.agent_runtime.role_for(self.ejected_colour) == "IMPOSTER"
         t1 = self.hud_font_lg.render(f"{self.ejected_colour} was ejected.", True, WHITE)
         screen.blit(t1, t1.get_rect(center=(WIDTH // 2, HEIGHT // 3)))
         t2 = self.hud_font.render(
@@ -802,7 +757,7 @@ class AutonomousGame:
         # Start pre-game trading period
         self.pre_game_trading = True
         self.pre_game_timer = 0
-        self.chain.on_pre_game_trading_start()
+        self.event_runtime.on_pre_game_trading_start()
         print("\n" + "="*60)
         print("PRE-GAME TRADING PERIOD: 30 SECONDS")
         print("Spectators can now buy agent tokens!")
@@ -821,7 +776,7 @@ class AutonomousGame:
                 
                 if self.pre_game_timer >= self.PRE_GAME_TRADING_TICKS:
                     self.pre_game_trading = False
-                    self.chain.on_game_actually_start()
+                    self.event_runtime.on_game_actually_start()
                     print("\n" + "="*60)
                     print("TRADING LOCKED - GAME STARTING!")
                     print("="*60 + "\n")
@@ -846,6 +801,7 @@ class AutonomousGame:
                         self.game.effect_sounds.get("victory_imposter", pg.mixer.Sound(buffer=b'')).stop()
                     except Exception:
                         pass
+                    self.event_runtime.close()
                     return True
                 continue
 
@@ -864,7 +820,7 @@ class AutonomousGame:
                     for c in self.dialogue_order:
                         if c not in self.spoken_agents and self.entities[c].alive_status:
                             obs = self._observation(c)
-                            act = self.agents[c].get_action(obs)
+                            act = self.agent_runtime.get_action(c, obs)
                             if act["type"] == "SPEAK":
                                 message = act.get("data", "...")
                                 self.dialogue_messages.append((c, message))
@@ -886,7 +842,7 @@ class AutonomousGame:
                     for c in self.alive_colours():
                         if c not in self.votes:
                             obs = self._observation(c)
-                            act = self.agents[c].get_action(obs)
+                            act = self.agent_runtime.get_action(c, obs)
                             if act["type"] == "VOTE":
                                 self.votes[c] = act.get("data")
                     alive = self.alive_colours()
@@ -912,7 +868,7 @@ class AutonomousGame:
                 # Agent tick
                 for c in self.alive_colours():
                     obs = self._observation(c)
-                    act = self.agents[c].get_action(obs)
+                    act = self.agent_runtime.get_action(c, obs)
                     atype = act.get("type", "NONE")
 
                     if atype == "MOVE":

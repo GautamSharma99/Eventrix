@@ -1,395 +1,242 @@
-Good. This is a **different product** now.
 
-You are no longer building:
+# Core Design Shift — Eventra SDK
 
-> “SDK that turns logs into markets”
+## Key Insight
 
-You are building:
+**Games must not manage agents, networking, or prediction markets.**
 
-> **Prediction Arena Infrastructure**
-> where games plug in → autonomous agents play → live streamed → real-time markets form.
+Games are responsible only for:
 
-That’s bigger. So the SDK must evolve.
+* Validating rules
+* Maintaining authoritative game state
+* Applying actions
 
-Below is a **clean, execution-grade PRD** reflecting this new narrative.
+**Eventra SDK owns everything else.**
 
-No fluff. Just buildable structure.
-
----
-
-# 📄 PRD: Eventrix Prediction Arena SDK
+This separation is fundamental to Eventra’s architecture and is required for deterministic gameplay, verifiable outcomes, and trustless market settlement.
 
 ---
 
-# 1. Product Overview
+## Design Principle
 
-## Product Name
+> **Games emit state. Eventra injects behavior.**
 
-**Eventrix Prediction Arena**
+The SDK acts as an orchestration layer that:
 
-## Core Thesis
+* Injects autonomous agent behavior
+* Streams game activity to the Eventrix platform
+* Generates and resolves prediction markets from game logs
 
-A platform where:
-
-1. Developers connect their games.
-2. The SDK wraps the game with autonomous agent controllers.
-3. Agents play the game (no humans required).
-4. Gameplay is streamed live on Eventrix.
-5. Prediction markets are dynamically created while the match is running.
-6. Spectators bet in real-time.
-7. Markets settle trustlessly on BNB Chain.
+Games remain simple, deterministic engines.
 
 ---
 
-# 2. High-Level Architecture
+## Responsibilities by Layer
 
-```text
-Game → Arena Adapter → Agent Controller → Match Engine
-         ↓
-   Event Stream → Market Engine → Blockchain (BNB)
-         ↓
-      Eventrix Web (Streaming + Betting UI)
-```
+### Game Engine (Web2 or Local)
 
----
+The game **must not**:
 
-# 3. Updated Core Components
+* Decide agent behavior
+* Handle WebSocket connections
+* Create or manage prediction markets
 
-## 3.1 Arena SDK (Core)
+The game **must**:
 
-Location: `/sdk`
-
-The SDK now has 4 responsibilities:
-
-1. Wrap game engines
-2. Inject autonomous agents
-3. Stream match state
-4. Generate prediction markets dynamically
+* Maintain authoritative state
+* Enforce game rules
+* Validate actions
+* Emit observations
+* Apply actions returned by the SDK
 
 ---
 
-# 4. Repository Structure (Updated)
+### Eventra SDK (Control Layer)
 
-```text
-eventrix-arena/
-├── sdk/
-│   ├── src/
-│   │   ├── arena.ts             # main orchestrator
-│   │   ├── adapter.ts           # game integration layer
-│   │   ├── agents/
-│   │   │   ├── baseAgent.ts
-│   │   │   ├── ruleAgent.ts
-│   │   │   └── agentManager.ts
-│   │   ├── match/
-│   │   │   ├── matchEngine.ts
-│   │   │   ├── stateStore.ts
-│   │   │   └── eventBus.ts
-│   │   ├── markets/
-│   │   │   ├── marketEngine.ts
-│   │   │   ├── oddsEngine.ts
-│   │   │   └── templates.ts
-│   │   ├── streaming/
-│   │   │   ├── streamServer.ts
-│   │   │   └── broadcaster.ts
-│   │   ├── blockchain/
-│   │   │   ├── bnbClient.ts
-│   │   │   └── settlement.ts
-│   │   ├── types.ts
-│   │   └── index.ts
-│
-├── contracts/
-│   ├── ArenaRegistry.sol
-│   ├── PredictionMarket.sol
-│   ├── MatchSettlement.sol
-│
-├── arena-server/               # backend host
-│
-├── eventrix-web/               # streaming + betting frontend
-│
-├── demo-game/
-│
-├── shared/
-└── package.json
-```
+The SDK is the **single source of behavioral truth**.
+
+It is responsible for:
+
+1. **Agentic behavior injection**
+2. **Game-to-platform connectivity**
+3. **Prediction market lifecycle management**
 
 ---
 
-# 5. Functional Requirements
+## 1. Agentic Behavior Injection (Rule-Based, Non-AI)
+
+Eventra injects autonomous agents using **classical programming techniques**, not AI or machine learning.
+
+### Supported Techniques
+
+* Rule-based heuristics
+* Finite state machines
+* Probabilistic decision trees
+* Deterministic randomization (seeded)
+
+No learning, no neural networks, no external inference.
 
 ---
 
-# 5.1 Game Connection Layer
+### Agent Contract
 
-File: `adapter.ts`
+Each agent follows a strict input/output contract:
 
-### Responsibilities
+**Input (Observation):**
 
-* Accept external game integration
-* Inject agents as players
-* Capture game state transitions
-* Emit normalized events
+* Current game state snapshot
+* Legal actions available
+* Phase or turn context
 
-### Public API
+**Output (Action):**
 
-```ts
-class ArenaAdapter {
-  constructor(gameInstance: any)
+* One valid action allowed by the game rules
 
-  registerAgent(agent: BaseAgent): void
+The SDK guarantees that:
 
-  startMatch(config: MatchConfig): void
-
-  onEvent(callback: (event: GameEvent) => void): void
-}
-```
+* All actions are legal
+* Behavior is reproducible given the same seed
+* No game logic is duplicated
 
 ---
 
-# 5.2 Autonomous Agent Layer
+### Chess Example (Rule-Based Agents)
 
-Directory: `/agents`
+In a chess integration:
 
-### Requirements
+* The game emits board state and legal moves
+* Eventra selects a move using deterministic randomness
+* The game validates and applies the move
 
-* SDK must support autonomous players
-* Agents receive state snapshots
-* Agents output actions
-* Agents act at each tick
+**The game never chooses moves.**
 
-### BaseAgent Interface
-
-```ts
-abstract class BaseAgent {
-  id: string
-
-  abstract decide(state: GameState): AgentAction
-}
-```
-
-### AgentManager
-
-* Maintains list of agents
-* Calls `decide()` per tick
-* Injects actions into game engine
-
-No ML required. Rule-based agents are enough.
+This mirrors the same philosophy used for autonomous agents in other games (e.g., social deduction or arena games), scaled down to turn-based logic.
 
 ---
 
-# 5.3 Match Engine
+## 2. Game-to-Platform Connectivity (WebSockets)
 
-Directory: `/match`
+Eventra SDK owns all networking.
 
-### Responsibilities
+### Python Game Integration
 
-* Orchestrate match lifecycle
-* Maintain deterministic state
-* Handle tick loop
-* Emit events
+* Games connect to Eventra via the SDK
+* SDK establishes and maintains WebSocket connections
+* Game engines never open sockets directly
 
-### Match Flow
+**Responsibilities handled by the SDK:**
 
-1. INIT
-2. START
-3. TICK LOOP
-4. END
-5. FINALIZE
+* Connection lifecycle
+* Reconnection logic
+* Event batching
+* Stream normalization
 
-### Determinism Requirement
-
-* All randomness seeded
-* Same seed → same outcome
-* Required for market trust
+Games simply emit events.
 
 ---
 
-# 5.4 Market Engine
+### Event Stream Contract
 
-Directory: `/markets`
+All game activity is streamed as structured events:
 
-### Responsibilities
+* GAME_STARTED
+* TURN_STARTED
+* MOVE_APPLIED
+* CAPTURE_OCCURRED
+* GAME_ENDED
 
-* Listen to game events
-* Dynamically create markets mid-match
-* Update odds continuously
-* Resolve markets
+These logs are:
 
-### Market Types
-
-1. Match Winner
-2. First Blood
-3. Kill Count Over/Under
-4. Next Player Eliminated
-5. Survive Next 30 Seconds
-
-Markets can be triggered:
-
-* On GAME_START
-* On specific event
-* On periodic intervals
-
-### Public API
-
-```ts
-class MarketEngine {
-  handleEvent(event: GameEvent): void
-
-  getActiveMarkets(): MarketState[]
-
-  resolveMarkets(finalState: GameState): void
-}
-```
+* Deterministic
+* Replayable
+* Verifiable
 
 ---
 
-# 5.5 Streaming Layer
+### TypeScript Client & Eventrix Website
 
-Directory: `/streaming`
+* TypeScript clients subscribe to live streams
+* Eventrix renders gameplay and market activity
+* Streaming is read-only and non-authoritative
 
-### Responsibilities
-
-* Broadcast match state to Eventrix web
-* Send:
-
-  * Current state
-  * Agent actions
-  * Market updates
-* Use WebSocket server
-
-### Data Sent to Frontend
-
-```ts
-{
-  matchId,
-  state,
-  markets,
-  tick
-}
-```
-
-Frontend is read-only.
+The platform **never influences gameplay**.
 
 ---
 
-# 5.6 Blockchain Layer
+## 3. Prediction Market Generation (Log-Driven)
 
-Directory: `/blockchain`
+Prediction markets are created and resolved **entirely from game logs**.
 
-### Responsibilities
+### Market Lifecycle
 
-* Create markets on BNB
-* Accept bets
-* Lock markets
-* Resolve markets
+1. SDK detects a market trigger from emitted events
+2. Market is created automatically
+3. Odds update as the game progresses
+4. Final outcome resolves the market
 
-### Smart Contracts
-
-## ArenaRegistry.sol
-
-* Registers matches
-* Stores match metadata
-
-## PredictionMarket.sol
-
-* Manages bets
-* Holds funds
-* Distributes winnings
-
-## MatchSettlement.sol
-
-* Verifies final match hash
-* Resolves markets
+No manual market configuration is required at runtime.
 
 ---
 
-# 6. Eventrix Web (Frontend)
+### Chess Market Examples
 
-Location: `/eventrix-web`
+* Who will win the match?
+* Will the game end in checkmate or draw?
+* Which color will capture the first piece?
+* Will the game last more than N moves?
 
-### Features
-
-* Live stream view
-* Real-time markets panel
-* Place bet
-* See odds move
-* View final settlement
-
-### Pages
-
-* `/arena` → list active matches
-* `/arena/[matchId]` → live match
+Markets are derived, not scripted.
 
 ---
 
-# 7. Demo Flow (Critical for Hackathon)
+## Determinism & Verifiability
 
-Demo must show:
+This architecture guarantees:
 
-1. Game connected to Arena SDK
-2. Agents playing automatically
-3. Live stream updating
-4. Markets forming mid-match
-5. Users placing bets
-6. Game ends
-7. Markets resolve on-chain
+* **Deterministic behavior**
+  Same seed + same inputs → same outcomes
 
-If this works, judges understand instantly.
+* **Replayability**
+  Entire matches can be reconstructed from logs
 
----
+* **Auditability**
+  Every action traces back to a rule
 
-# 8. Determinism & Verifiability
-
-Each match must:
-
-* Use seeded RNG
-* Generate event log
-* Produce final hash
-* Hash submitted to chain on settlement
-
-This prevents:
-
-* Post-bet manipulation
-* Replay cheating
+* **Market integrity**
+  No hidden logic, no operator discretion
 
 ---
 
-# 9. What Makes This Different
+## Explicit Non-Goals
 
-Not:
+Eventra SDK intentionally does **not**:
 
-* Just a prediction market
-* Just an AI agent game
+* Perform learning or adaptation
+* Optimize agent strategies
+* Use AI models for decision-making
+* Modify game rules
 
-It is:
-
-> An automated esports engine where games become financial markets.
-
-That’s your narrative.
+The SDK is a behavioral orchestrator, not an intelligence engine.
 
 ---
 
-# 10. Explicit Non-Goals
+## Summary
 
-Do NOT implement:
+Eventra introduces a strict separation of concerns:
 
-* Token launch
-* DAO governance
-* Multi-game matchmaking
-* Cross-chain
-* ML training
+| Component         | Responsibility                    |
+| ----------------- | --------------------------------- |
+| Game              | State, rules, validation          |
+| Eventra SDK       | Agents, networking, markets       |
+| Eventrix Platform | Streaming, visualization, betting |
 
-Hackathon scope only.
+This design enables:
 
----
+* Plug-and-play game integration
+* Autonomous gameplay without AI
+* Trustless, verifiable prediction markets
 
-# 11. Success Criteria
-
-The project is successful if:
-
-* Any JS game can be wrapped with ArenaAdapter
-* Agents play autonomously
-* Markets auto-generate
-* Spectators bet live
-* Settlement occurs on BNB testnet
+**Games emit state. Eventra controls behavior.**
 
 ---
+

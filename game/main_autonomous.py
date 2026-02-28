@@ -1,7 +1,7 @@
 """
 MonadSus — Autonomous Agent Mode Entry Point
 
-Launch this to watch AI agents play a full match of Among Us.
+Launch this to watch autonomous agents play a full match of Among Us.
 No keyboard or mouse input is used for gameplay — humans are spectators only.
 
 Every character you see is an autonomous agent.
@@ -22,7 +22,7 @@ from autonomous_game import AutonomousGame
 def main():
     print("\n" + "=" * 60)
     print("  MonadSus — Autonomous Agent Simulation")
-    print("  Every player is an AI agent. No humans are playing.")
+    print("  Every player is an autonomous rule-based agent. No humans are playing.")
     print("=" * 60 + "\n")
 
     while True:
