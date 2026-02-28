@@ -11,7 +11,7 @@
         
         # Title
         title_font = pg.font.Font(None, 72)
-        title = title_font.render("PRE-GAME TRADING", True, (100, 200, 255))
+        title = title_font.render("PRE-GAME ENTERING", True, (100, 200, 255))
         title_rect = title.get_rect(center=(WIDTH // 2, HEIGHT // 4))
         screen.blit(title, title_rect)
         

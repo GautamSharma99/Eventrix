@@ -17,11 +17,11 @@ const docs: Record<string, { title: string; content: string; code?: string }> = 
     title: "Introduction",
     content: `**What is Eventra?**
 
-Eventra is an SDK and runtime that turns any deterministic game into a live prediction arena. Games connect through a lightweight adapter, autonomous agents replace human players, and real-time events drive the creation of decentralized prediction markets that settle on BNB Chain.
+Eventra is an SDK and orchestration layer that turns any deterministic game into a live prediction arena. Games remain simple, deterministic engines — they maintain state, enforce rules, and validate actions. Eventra owns everything else: autonomous agent behavior, game-to-platform connectivity, and prediction market lifecycle management.
 
-**Why does it exist?**
+**Design principle: Games emit state. Eventra injects behavior.**
 
-Human esports require coordination, scheduling, and trust. Autonomous agents eliminate all three. When agents play, matches run continuously, outcomes are deterministic, and market settlement becomes cryptographically provable — no oracles, no disputes.
+Games connect through a lightweight ArenaAdapter. The SDK injects autonomous agents (rule-based, not AI), streams gameplay to the Eventrix platform, and generates prediction markets from game logs — all settling on BNB Chain.
 
 **Who is it for?**
 
@@ -29,7 +29,7 @@ Web2 game developers who want to add a prediction layer to their game without re
 
 **How does it work?**
 
-Your game emits structured events (kills, rounds, scores) through the Eventra adapter. The Match Engine orchestrates autonomous agents. The Market Engine listens to the event stream and creates prediction markets dynamically. When a match ends, the final game state hash is submitted to BNB Chain for trustless settlement.`,
+Your game emits structured events (kills, rounds, scores) through the ArenaAdapter. The Match Engine orchestrates autonomous agents. The Market Engine listens to the event stream and creates prediction markets dynamically. When a match ends, the final game state hash is submitted to BNB Chain for trustless settlement.`,
   },
   concepts: {
     title: "Core Concepts",
@@ -57,13 +57,13 @@ The StateStore maintains a complete, serializable snapshot of the match at all t
     title: "SDK Architecture",
     content: `**Overview**
 
-The SDK is organized into five layers, each with a single responsibility:
+The SDK is organized into six layers, each with a single responsibility:
 
 **1. Adapter Layer** — adapter.ts
-Accepts game integration, injects agents as players, captures game state transitions, and emits normalized GameEvent objects. This is the only file a game developer needs to touch.
+Accepts a game instance, injects agents as players, captures game state transitions, and emits normalized GameEvent objects. This is the only file a game developer needs to touch.
 
 **2. Agent Layer** — agents/
-Contains BaseAgent (abstract interface), RuleAgent (built-in rule-based implementation), and AgentManager (orchestrates agent lifecycle). Agents receive state snapshots via decide(state) and return an AgentAction. No ML required — rule-based agents are sufficient.
+Contains BaseAgent (abstract interface), RuleAgent (built-in rule-based implementation), and AgentManager (orchestrates agent lifecycle). Agents receive state snapshots via decide(state) and return an AgentAction { agentId, type, data }. No ML required — rule-based agents with deterministic randomization are sufficient.
 
 **3. Match Layer** — match/
 MatchEngine orchestrates the match lifecycle. StateStore maintains deterministic state. EventBus handles pub/sub event routing. All randomness is seeded for verifiability.
@@ -71,11 +71,16 @@ MatchEngine orchestrates the match lifecycle. StateStore maintains deterministic
 **4. Market Layer** — markets/
 MarketEngine processes game events and creates/resolves markets. OddsEngine calculates probabilities using Bayesian updates. Templates define market types (Match Winner, First Blood, Over/Under, etc.).
 
-**5. Blockchain Layer** — blockchain/
-BnbClient handles wallet and contract interactions. Settlement submits final state hashes and resolves markets on-chain. All settlement is automated — no manual intervention required.`,
+**5. Streaming Layer** — streaming/
+Broadcaster binds to the MatchEngine and MarketEngine, forwarding all events and market updates to connected clients via StreamServer (WebSocket). The Eventrix platform subscribes here for live visualization.
+
+**6. Blockchain Layer** — blockchain/
+BNBClient handles wallet and contract interactions. SettlementEngine deploys and resolves markets on-chain. All settlement is automated — no manual intervention required.`,
     code: `sdk/src/
-├── adapter.ts          # Game integration
-├── arena.ts            # Main orchestrator
+├── adapter.ts          # Game integration point
+├── arena.ts            # PredictionArena orchestrator
+├── index.ts            # Public API exports
+├── types.ts            # Shared type definitions
 ├── agents/
 │   ├── baseAgent.ts    # Abstract agent interface
 │   ├── ruleAgent.ts    # Built-in rule-based agent
@@ -83,25 +88,27 @@ BnbClient handles wallet and contract interactions. Settlement submits final sta
 ├── match/
 │   ├── matchEngine.ts  # Match orchestration
 │   ├── stateStore.ts   # Deterministic state
-│   └── eventBus.ts     # Event routing
+│   └── eventBus.ts     # Event pub/sub routing
 ├── markets/
 │   ├── marketEngine.ts # Market creation/resolution
-│   ├── oddsEngine.ts   # Probability calculation
+│   ├── oddsEngine.ts   # Bayesian probability engine
 │   └── templates.ts    # Market type definitions
-├── blockchain/
-│   ├── bnbClient.ts    # Chain interaction
-│   └── settlement.ts   # On-chain resolution
-└── types.ts            # Shared type definitions`,
+├── streaming/
+│   ├── broadcaster.ts  # Event/market fan-out
+│   └── streamServer.ts # WebSocket server
+└── blockchain/
+    ├── bnbClient.ts    # Wallet + contract calls
+    └── settlement.ts   # On-chain market resolution`,
   },
   agents: {
     title: "Agents",
     content: `**What are agents?**
 
-Agents are autonomous players that replace humans in the game. They receive a snapshot of the current game state and return an action. This happens every tick of the match engine.
+Agents are autonomous players that replace humans in the game. They receive a snapshot of the current game state and return an action. This happens every tick of the match engine. Agents use classical programming techniques — rule-based heuristics, finite state machines, and deterministic randomization. No neural networks or ML.
 
 **BaseAgent Interface**
 
-Every agent implements the BaseAgent abstract class. The only required method is decide(state: GameState): AgentAction. The agent receives the full game state and must return exactly one action.
+Every agent extends the BaseAgent abstract class. The only required method is decide(state: GameState): AgentAction. The agent receives the full game state (tick, agents, phase, seed, metadata) and must return exactly one action with { agentId, type, data }.
 
 **RuleAgent**
 
@@ -113,18 +120,18 @@ The AgentManager maintains the roster of agents for a match. It calls decide() o
 
 **Why autonomous agents?**
 
-Human players create scheduling problems, trust issues, and downtime. Autonomous agents play 24/7, produce deterministic outcomes, and eliminate coordination overhead. This makes continuous market generation possible.`,
+Human players create scheduling problems, trust issues, and downtime. Autonomous agents play 24/7, produce deterministic outcomes (same seed + same inputs = same outputs), and eliminate coordination overhead. This makes continuous market generation possible.`,
     code: `import { BaseAgent, GameState, AgentAction } from "@eventra/sdk"
 
 class MyAgent extends BaseAgent {
-  decide(state: GameState): AgentAction {
-    // Check if an enemy is nearby
-    if (state.nearestEnemy && state.nearestEnemy.distance < 50) {
-      return { type: "ATTACK", target: state.nearestEnemy.id }
-    }
+  constructor() { super("agent-1", "crew") }
 
-    // Otherwise, move toward the objective
-    return { type: "MOVE", direction: state.objectiveDirection }
+  decide(state: GameState): AgentAction {
+    const enemy = state.agents.find(a => a.alive && a.id !== this.id)
+    if (enemy && enemy.position) {
+      return { agentId: this.id, type: "ATTACK", data: enemy.id }
+    }
+    return { agentId: this.id, type: "MOVE", data: { x: 1, y: 0 } }
   }
 }`,
   },
@@ -132,17 +139,17 @@ class MyAgent extends BaseAgent {
     title: "Markets",
     content: `**What are prediction markets?**
 
-In Eventra, prediction markets are state-derivatives — financial instruments that derive their value from the state of a running game. They are not traditional betting. They are structured predictions with deterministic resolution.
+In Eventra, prediction markets are state-derivatives — financial instruments that derive their value from the state of a running game. They are not traditional betting. They are structured predictions with deterministic resolution. Markets are derived from game logs, not scripted manually.
 
-**Market Types**
+**Market Templates**
 
-The SDK includes built-in market templates:
+The SDK uses MarketTemplate objects to define what markets to create. Each template specifies:
 
-- **Match Winner** — Who will win the match? Created on GAME_START.
-- **First Blood** — Who gets the first kill? Created on GAME_START, resolved on first KILL event.
-- **Over/Under** — Will total kills exceed a threshold? Created periodically during the match.
-- **Next Eliminated** — Which agent will be eliminated next? Created after each elimination event.
-- **Survive N Seconds** — Will a specific agent survive the next 30 seconds? Created on intervals.
+- **id** — Unique identifier for the template.
+- **description** — Human-readable market name.
+- **triggerEvent** — Which game event triggers market creation (e.g. "GAME_START").
+- **outcomeResolver** — How the outcome is determined from game state.
+- **marketType** — BINARY or MULTI_OUTCOME.
 
 **How odds work**
 
@@ -150,15 +157,14 @@ The OddsEngine recalculates probabilities after every game event. It uses Bayesi
 
 **Custom markets**
 
-You can define custom market templates by specifying the trigger event, the resolution condition, and the outcome set. The MarketEngine will automatically instantiate and resolve them.`,
-    code: `// Built-in market template example
+You define custom market templates in your SDKConfig when creating the PredictionArena. The MarketEngine will automatically instantiate and resolve them as events flow.`,
+    code: `// MarketTemplate — passed in SDKConfig.marketTemplates
 {
   id: "match_winner",
-  name: "Match Winner",
-  trigger: "GAME_START",
-  outcomes: ["team_a", "team_b"],
-  resolution: "GAME_END",
-  resolveFrom: (state) => state.winner
+  description: "Who will win the match?",
+  triggerEvent: "GAME_START",
+  outcomeResolver: "winner",
+  marketType: "BINARY"
 }`,
   },
   blockchain: {
@@ -173,18 +179,19 @@ On-chain settlement provides three guarantees that off-chain systems cannot:
 
 **Smart Contracts**
 
-Eventra uses three contracts on BNB Chain:
+Eventra uses a PredictionMarket contract on BNB Chain that handles market creation, escrow, and resolution. The SDK interacts with it through two components:
 
-- **ArenaRegistry.sol** — Registers matches and stores metadata (agent roster, seed, config hash).
-- **PredictionMarket.sol** — Manages betting pools, holds funds in escrow, and distributes winnings on resolution.
-- **MatchSettlement.sol** — Accepts the final game state hash, verifies it against the registered match, and triggers market resolution.
+- **BNBClient** — Handles wallet creation, RPC connectivity, and raw contract calls. Configured via SDKConfig (chainId, rpcUrl, contractAddress).
+- **SettlementEngine** — Deploys markets on-chain and resolves them when outcomes are determined. Uses BNBClient internally.
+
+No API keys are required. The SDK connects directly to the BNB Chain RPC endpoint.
 
 **Settlement flow**
 
-1. Match begins → ArenaRegistry records the match with its config hash.
-2. Match runs → PredictionMarket accepts bets on active markets.
-3. Match ends → Match Engine produces a final state hash.
-4. Settlement → MatchSettlement receives the hash, verifies it, and calls PredictionMarket.resolveMarket() for each market.
+1. Match begins → Markets are created on-chain via SettlementEngine.deployMarkets().
+2. Match runs → PredictionMarket contract accepts bets on active markets.
+3. Match ends → MarketEngine resolves market outcomes from game state.
+4. Settlement → SettlementEngine.resolveMarkets() submits outcomes on-chain.
 5. Payouts → Winners claim their funds directly from the contract.
 
 **Why no oracles?**
@@ -199,14 +206,14 @@ The demo game is a simplified autonomous agent match that demonstrates the full 
 
 **What happens step by step:**
 
-1. The demo initializes the PredictionArena with a BNB testnet configuration.
-2. Market templates are registered (Match Winner, First Blood, Survivor).
-3. Autonomous agents are created and registered with the AgentManager.
-4. The Match Engine starts the game loop — agents make decisions every tick.
-5. Events (kills, rounds, scores) flow through the EventBus.
-6. The Market Engine creates and updates markets in real-time based on events.
-7. When the match concludes, the final state hash is generated.
-8. Markets are resolved and settlement is submitted to BNB Chain.
+1. A PredictionArena is created with SDKConfig (chainId, rpcUrl, marketTemplates) and a game instance.
+2. The ArenaAdapter connects the game to the SDK.
+3. Autonomous agents are registered via arena.adapter.registerAgent().
+4. arena.adapter.start() kicks off the match — agents make decisions every tick via decide(state).
+5. Events (kills, rounds, scores) flow through the EventBus to the MarketEngine.
+6. The MarketEngine creates and updates markets in real-time based on events.
+7. The Broadcaster streams all events to connected clients via WebSocket.
+8. When the match concludes, the SettlementEngine resolves markets on BNB Chain.
 
 **Determinism is key**
 
@@ -245,8 +252,8 @@ export default function DocsSection() {
                     key={item.id}
                     onClick={() => setActive(item.id)}
                     className={`flex items-center gap-2 whitespace-nowrap px-4 py-3 text-left transition-colors ${active === item.id
-                        ? "bg-primary/15 text-primary font-pixel text-[9px]"
-                        : "font-retro text-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                      ? "bg-primary/15 text-primary font-pixel text-[9px]"
+                      : "font-retro text-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50"
                       }`}
                   >
                     <item.icon size={15} />

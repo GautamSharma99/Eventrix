@@ -256,8 +256,13 @@ async def ws_game(websocket: WebSocket, game_id: str):
     try:
         while True:
             await asyncio.sleep(25)
-            await websocket.send_text('{"type":"PING"}')
-    except WebSocketDisconnect:
+            try:
+                await websocket.send_text('{"type":"PING"}')
+            except Exception:
+                break
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
         game_subscribers[game_id].discard(websocket)
         print(f"[WS] Client disconnected → game/{game_id}")
 
@@ -274,8 +279,13 @@ async def ws_legacy(websocket: WebSocket):
     try:
         while True:
             await asyncio.sleep(25)
-            await websocket.send_text('{"type":"PING"}')
-    except WebSocketDisconnect:
+            try:
+                await websocket.send_text('{"type":"PING"}')
+            except Exception:
+                break
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
         legacy_subscribers.discard(websocket)
 
 
@@ -317,10 +327,14 @@ async def ws_video_subscribe(websocket: WebSocket, game_id: str):
     print(f"[VIDEO] Browser subscribed to {game_id} ({len(video_subscribers[game_id])} total)")
     try:
         while True:
-            # Just keep alive — frames are pushed to us, we don't receive from browser
             await asyncio.sleep(30)
-            await websocket.send_text('{"type":"PING"}')
-    except WebSocketDisconnect:
+            try:
+                await websocket.send_text('{"type":"PING"}')
+            except Exception:
+                break
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
         video_subscribers[game_id].discard(websocket)
         print(f"[VIDEO] Browser unsubscribed from {game_id}")
 
@@ -339,6 +353,10 @@ def health():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    import logging
+    # Suppress harmless Windows ProactorEventLoop ConnectionResetError
+    logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+
     print("=" * 50)
     print("  MonadSus Bridge Server")
     print("  http://localhost:8000")
