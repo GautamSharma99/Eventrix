@@ -6,11 +6,20 @@ export type GameEventType =
   | "VOTE"
   | "EJECTION"
   | "GAME_END"
+  // Chess events
+  | "MOVE"
+  | "CHECK"
+  | "CHECKMATE"
+  | "STALEMATE"
 
 export interface GameStartEvent {
   type: "GAME_START"
-  agents: string[]
+  agents?: string[]
   imposter?: string
+  // Chess fields
+  players?: string[]
+  mode?: string
+  game_type?: string
 }
 
 export interface KillEvent {
@@ -36,8 +45,9 @@ export interface EjectionEvent {
 
 export interface GameEndEvent {
   type: "GAME_END"
-  winner: "crew" | "imposter"
-  imposter: string
+  winner: string
+  imposter?: string
+  result?: string
 }
 
 export type GameEvent =
@@ -47,6 +57,35 @@ export type GameEvent =
   | VoteEvent
   | EjectionEvent
   | GameEndEvent
+  | ChessMoveEvent
+  | ChessCheckEvent
+  | ChessCheckmateEvent
+  | ChessStalemateEvent
+
+// --- Chess event interfaces ---
+export interface ChessMoveEvent {
+  type: "MOVE"
+  player: string
+  piece: string
+  start: number[]
+  end: number[]
+}
+
+export interface ChessCheckEvent {
+  type: "CHECK"
+  king: string
+}
+
+export interface ChessCheckmateEvent {
+  type: "CHECKMATE"
+  winner: string
+  loser: string
+}
+
+export interface ChessStalemateEvent {
+  type: "STALEMATE"
+  turn: string
+}
 
 // --- Feed item for the event log ---
 export interface FeedItem {
@@ -124,6 +163,6 @@ export interface GameState {
   leaderboard: LeaderboardEntry[]
   currentUserId: string
   imposter: string | null
-  winner: "crew" | "imposter" | null
+  winner: string | null
   connectionStatus: "connecting" | "connected" | "disconnected"
 }

@@ -153,12 +153,12 @@ function resolveSingleMarket(state: GameState, marketId: string, outcome: Predic
   const markets = state.markets.map((m) =>
     m.id === marketId
       ? {
-          ...m,
-          status: "RESOLVED" as const,
-          resolved: outcome,
-          lockedAt: m.lockedAt ?? resolvedAt,
-          resolvedAt,
-        }
+        ...m,
+        status: "RESOLVED" as const,
+        resolved: outcome,
+        lockedAt: m.lockedAt ?? resolvedAt,
+        resolvedAt,
+      }
       : m
   )
 
@@ -278,30 +278,47 @@ function processEvent(event: GameEvent) {
   switch (event.type) {
     case "GAME_START": {
       if (meetingUnlockTimer) clearTimeout(meetingUnlockTimer)
-      const agents: Agent[] = event.agents.map((name, i) => ({
+      const names = event.agents ?? event.players ?? []
+      const isChess = event.game_type === "chess"
+      const agents: Agent[] = names.map((name, i) => ({
         name,
         alive: true,
         color: AGENT_COLORS[i % AGENT_COLORS.length],
       }))
       const leaderboard = initialLeaderboard()
-      const openingMarket = withBotPredictions(
-        createMarket("crew_win", "Will the Crew win?"),
-        leaderboard,
-        CURRENT_USER_ID
-      )
 
-      setState((prev) => ({
-        ...createInitialState(),
-        phase: "running",
-        agents,
-        leaderboard,
-        markets: [openingMarket],
-        imposter: event.imposter ?? null,
-        winner: null,
-        connectionStatus: prev.connectionStatus,
-      }))
-
-      addFeedItem("GAME_START", "Game Started", `${event.agents.length} agents entered`)
+      if (isChess) {
+        // Chess — no prediction markets at start, simpler state
+        setState((prev) => ({
+          ...createInitialState(),
+          phase: "running",
+          agents,
+          leaderboard,
+          markets: [],
+          imposter: null,
+          winner: null,
+          connectionStatus: prev.connectionStatus,
+        }))
+        addFeedItem("GAME_START", "Chess Match Started", `${event.mode ?? "agent_vs_agent"} · White vs Black`)
+      } else {
+        // Among Us
+        const openingMarket = withBotPredictions(
+          createMarket("crew_win", "Will the Crew win?"),
+          leaderboard,
+          CURRENT_USER_ID
+        )
+        setState((prev) => ({
+          ...createInitialState(),
+          phase: "running",
+          agents,
+          leaderboard,
+          markets: [openingMarket],
+          imposter: event.imposter ?? null,
+          winner: null,
+          connectionStatus: prev.connectionStatus,
+        }))
+        addFeedItem("GAME_START", "Game Started", `${names.length} agents entered`)
+      }
       break
     }
 
@@ -426,7 +443,7 @@ function processEvent(event: GameEvent) {
           ...prev,
           phase: "ended",
           winner: event.winner,
-          imposter: event.imposter,
+          imposter: event.imposter ?? null,
         }
 
         next = resolveMarkets(
@@ -447,14 +464,96 @@ function processEvent(event: GameEvent) {
         return next
       })
 
+      // Chess game end events have result field instead of imposter
+      if ("result" in event) {
+        // Chess game end
+        const resultStr = event.result === "checkmate" ? "Checkmate" : "Stalemate"
+        const winnerStr = event.winner === "draw" ? "Draw" : `${capitalize(event.winner as string)} wins`
+        addFeedItem("GAME_END", `Game Over — ${winnerStr}`, resultStr)
+      } else {
+        addFeedItem(
+          "GAME_END",
+          event.winner === "crew" ? "Crew Wins!" : "Impostor Wins!",
+          `The impostor was ${event.imposter}`
+        )
+      }
+      break
+    }
+
+    // ------------------------------------------------------------------
+    // Chess events
+    // ------------------------------------------------------------------
+
+    case "MOVE": {
+      const from = toSquare(event.start)
+      const to = toSquare(event.end)
+      const piece = capitalize(event.piece)
+      const player = capitalize(event.player)
+
+      // Detect if it was a capture (the game emits target-square info)
+      // For now, just show piece moves
       addFeedItem(
-        "GAME_END",
-        event.winner === "crew" ? "Crew Wins!" : "Impostor Wins!",
-        `The impostor was ${event.imposter}`
+        "MOVE",
+        `${piece} → ${to.toUpperCase()}`,
+        `${player} · ${from.toUpperCase()} to ${to.toUpperCase()}`
+      )
+
+      // Update phase to running if we get moves
+      setState((prev) => ({
+        ...prev,
+        phase: prev.phase === "waiting" ? "running" : prev.phase,
+      }))
+      break
+    }
+
+    case "CHECK": {
+      addFeedItem(
+        "CHECK",
+        `${capitalize(event.king)} is in check!`,
+        "King under attack"
       )
       break
     }
+
+    case "CHECKMATE": {
+      addFeedItem(
+        "CHECKMATE",
+        `Checkmate — ${capitalize(event.winner)} wins!`,
+        `${capitalize(event.loser)} has no legal moves`
+      )
+      setState((prev) => ({ ...prev, phase: "ended" }))
+      break
+    }
+
+    case "STALEMATE": {
+      addFeedItem(
+        "STALEMATE",
+        "Stalemate — Draw!",
+        `${capitalize(event.turn)} has no legal moves`
+      )
+      setState((prev) => ({ ...prev, phase: "ended" }))
+      break
+    }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Chess notation helpers
+// ---------------------------------------------------------------------------
+
+const COL_LETTERS = "abcdefgh"
+
+function toSquare(coord: number[]): string {
+  if (!coord || coord.length < 2) return "?"
+  const [row, col] = coord
+  const file = COL_LETTERS[col] ?? "?"
+  const rank = 8 - row
+  return `${file}${rank}`
+}
+
+function capitalize(s: string): string {
+  if (!s) return ""
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 function resetGame() {

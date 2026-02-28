@@ -13,6 +13,10 @@ import {
   Play,
   Radio,
   Tv,
+  ArrowRight,
+  ShieldAlert,
+  Crown,
+  Handshake,
   type LucideIcon,
 } from "lucide-react"
 import type { GameEventType } from "@/lib/game-types"
@@ -24,6 +28,11 @@ const eventIcons: Record<GameEventType, LucideIcon> = {
   VOTE: Vote,
   EJECTION: LogOut,
   GAME_END: Trophy,
+  // Chess
+  MOVE: ArrowRight,
+  CHECK: ShieldAlert,
+  CHECKMATE: Crown,
+  STALEMATE: Handshake,
 }
 
 const eventColors: Record<GameEventType, string> = {
@@ -33,6 +42,11 @@ const eventColors: Record<GameEventType, string> = {
   VOTE: "text-muted-foreground",
   EJECTION: "text-accent",
   GAME_END: "text-primary",
+  // Chess
+  MOVE: "text-blue-400",
+  CHECK: "text-orange-400",
+  CHECKMATE: "text-yellow-400",
+  STALEMATE: "text-muted-foreground",
 }
 
 function formatTime(ts: number) {
